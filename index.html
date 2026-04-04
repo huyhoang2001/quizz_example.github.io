@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Quiz - 4 đáp án | Tự động đảo câu hỏi & đáp án</title>
+    <!-- SheetJS để đọc file Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="container" id="app">
+    <!-- HOME PAGE -->
+    <div id="homePage">
+        <div class="title">📚 Quiz</div>
+        <div class="sub">Chọn chế độ làm bài (câu hỏi & đáp án luôn được đảo ngẫu nhiên)</div>
+        <div class="home-buttons">
+            <button class="primary" id="btnNormal">📖 Bắt đầu (Bình thường)</button>
+            <button class="primary" id="btnChallenge">⚡ Thử thách (10s / câu)</button>
+        </div>
+        
+        <!-- IMPORT AREA -->
+        <div class="import-area">
+            <div style="font-weight:600; margin-bottom:8px;">📂 Tải bộ câu hỏi từ file</div>
+            <label class="import-label" for="fileInput">📁 Chọn file (.json, .xlsx, .txt)</label>
+            <input type="file" id="fileInput" accept=".json,.xlsx,.txt">
+            <div id="importStatus" class="import-status"></div>
+            <div class="info-note" style="margin-top:10px;">
+                <strong>Định dạng hỗ trợ:</strong><br>
+                <strong>JSON</strong>: [{"text":"...","options":["...",...],"correct":0}]<br>
+                <strong>Excel</strong>: cột text, option_0, option_1, option_2, option_3, correct (0-3)<br>
+                <strong>TXT</strong>: mỗi dòng: câu hỏi|đáp án1|đáp án2|đáp án3|đáp án4|đáp án_đúng(0-3)
+            </div>
+        </div>
+        <div class="info-note">✔ Mỗi câu chỉ 1 lần chọn, tự động sang câu tiếp.<br>✔ Chế độ thường: hiện đáp án đúng/sai ngay, chuyển sau 1s.<br>✔ Chế độ thử thách: click → chuyển ngay, không feedback; hết 10s → sai.<br>🔄 Câu hỏi và thứ tự đáp án luôn được xáo trộn mỗi khi bắt đầu quiz.</div>
+    </div>
+
+    <!-- QUIZ PAGE -->
+    <div id="quizPage" style="display: none;">
+        <div class="quiz-header">
+            <button class="exit-btn" id="exitQuizBtn">🏠 Thoát</button>
+            <div id="timerDisplay" class="timer-box" style="display: none;">⏱️ 10s</div>
+        </div>
+        <div class="question-text" id="questionText">Đang tải câu hỏi...</div>
+        <div id="optionsContainer" class="options"></div>
+        <div class="info-note" id="quizHint"></div>
+    </div>
+
+    <!-- RESULTS PAGE -->
+    <div id="resultsPage" style="display: none;">
+        <div class="title">📊 Kết quả</div>
+        <div id="circlesContainer" class="results-grid"></div>
+        <div class="restart-home">
+            <button class="outline" id="homeFromResults">🏠 Trang chủ</button>
+        </div>
+        <footer>Xanh: đúng | Đỏ: sai</footer>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
