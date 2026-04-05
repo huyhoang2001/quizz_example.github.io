@@ -56,6 +56,11 @@ button.outline:hover {
     background: #eef4ff;
 }
 
+button.small {
+    padding: 6px 16px;
+    font-size: 0.85rem;
+}
+
 .home-buttons {
     display: flex;
     flex-direction: column;
@@ -112,9 +117,40 @@ button.outline:hover {
 }
 
 .import-status {
-    font-size: 0.8rem;
+    font-size: 0.9rem;
+    font-weight: 500;
     color: #16a34a;
     margin-top: 8px;
+}
+
+.select-quantity {
+    margin: 16px 0 10px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    align-items: center;
+}
+
+.quantity-btn {
+    background: #e9ecef;
+    padding: 6px 14px;
+    font-size: 0.9rem;
+    border-radius: 40px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.quantity-btn.active {
+    background: #1e6fdf;
+    color: white;
+}
+
+.info-note {
+    font-size: 0.75rem;
+    text-align: center;
+    color: #6c757d;
+    margin-top: 16px;
 }
 
 .quiz-header {
@@ -241,13 +277,6 @@ button.outline:hover {
     margin-top: 20px;
 }
 
-.info-note {
-    font-size: 0.75rem;
-    text-align: center;
-    color: #6c757d;
-    margin-top: 16px;
-}
-
 footer {
     text-align: center;
     font-size: 0.7rem;
@@ -266,5 +295,10 @@ footer {
 
     .option {
         padding: 12px 16px;
+    }
+
+    .quantity-btn {
+        padding: 4px 10px;
+        font-size: 0.8rem;
     }
 }
