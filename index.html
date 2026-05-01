@@ -1,75 +1,126 @@
 <!DOCTYPE html>
 <html lang="vi">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Quiz - Chọn số câu linh hoạt | Đảo câu & đáp án</title>
-    <!-- SheetJS để đọc file Excel -->
+    <title>Quiz — Chọn mã đề</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
-    <div class="container" id="app">
-        <!-- HOME PAGE -->
-        <div id="homePage">
-            <div class="title">📚 Quiz</div>
-            <div class="sub">Chọn chế độ làm bài (câu hỏi & đáp án luôn được đảo ngẫu nhiên)</div>
+<div class="container" id="app">
 
-            <!-- IMPORT AREA -->
-            <div class="import-area">
-                <div style="font-weight:600; margin-bottom:8px;">📂 Tải bộ câu hỏi từ file</div>
-                <label class="import-label" for="fileInput">📁 Chọn file (.json, .xlsx, .txt)</label>
-                <input type="file" id="fileInput" accept=".json,.xlsx,.txt">
-                <div id="importStatus" class="import-status"></div>
+    <!-- ===== HOME PAGE ===== -->
+    <div id="homePage">
+        <div class="page-title">📚 <span>Quiz</span></div>
+        <div class="sub">Câu hỏi & đáp án được xáo trộn ngẫu nhiên mỗi lần làm bài</div>
 
-                <!-- Phần chọn số câu (chỉ hiện sau khi import thành công) -->
-                <div id="quantitySelector" style="display: none; margin-top: 16px;">
-                    <div style="font-size:0.85rem; margin-bottom: 8px;">📌 Chọn số câu sẽ xuất hiện trong quiz:</div>
-                    <div class="select-quantity" id="quantityButtons">
-                        <button data-q="10" class="quantity-btn">10</button>
-                        <button data-q="20" class="quantity-btn active">20</button>
-                        <button data-q="30" class="quantity-btn">30</button>
-                        <button data-q="40" class="quantity-btn">40</button>
-                        <button data-q="all" class="quantity-btn">Tất cả</button>
-                    </div>
-                    <div id="selectedInfo" class="info-note" style="margin-top: 6px;"></div>
+        <!-- IMPORT -->
+        <div class="import-area">
+            <div class="import-area-title">📂 Tải bộ câu hỏi từ file</div>
+            <label class="import-label" for="fileInput">📁 Chọn file (.json, .xlsx, .txt)</label>
+            <input type="file" id="fileInput" accept=".json,.xlsx,.txt">
+            <div id="importStatus" class="import-status"></div>
+
+            <!-- Quantity Selector -->
+            <div id="quantitySelector" style="display:none;" class="quantity-section">
+                <div class="quantity-label">📌 Số câu mỗi mã đề:</div>
+                <div class="quantity-pills" id="quantityButtons">
+                    <button data-q="10" class="quantity-btn">10</button>
+                    <button data-q="20" class="quantity-btn">20</button>
+                    <button data-q="30" class="quantity-btn">30</button>
+                    <button data-q="40" class="quantity-btn">40</button>
+                    <button data-q="50" class="quantity-btn active">50</button>
+                    <button data-q="all" class="quantity-btn">Tất cả</button>
                 </div>
+                <div id="selectedInfo" class="selected-info"></div>
             </div>
-
-            <div class="home-buttons">
-                <button class="primary" id="btnNormal">📖 Bắt đầu (Bình thường)</button>
-                <button class="primary" id="btnChallenge">⚡ Thử thách (10s / câu)</button>
-            </div>
-            <div class="info-note">✔ Mỗi câu chỉ 1 lần chọn, tự động sang câu tiếp.<br>✔ Chế độ thường: hiện đáp án
-                đúng/sai ngay, chuyển sau 1s.<br>✔ Chế độ thử thách: click → chuyển ngay, không feedback; hết 10s →
-                sai.<br>🔄 Câu hỏi và thứ tự đáp án luôn được xáo trộn mỗi khi bắt đầu quiz.<br>📌 Bạn có thể import bộ
-                câu hỏi lớn và chọn số câu muốn làm.</div>
         </div>
 
-        <!-- QUIZ PAGE -->
-        <div id="quizPage" style="display: none;">
-            <div class="quiz-header">
-                <button class="exit-btn" id="exitQuizBtn">🏠 Thoát</button>
-                <div id="timerDisplay" class="timer-box" style="display: none;">⏱️ 10s</div>
+        <!-- EXAM CODE SECTION -->
+        <div class="exam-section" id="examSection" style="display:none;">
+            <div class="exam-section-title">
+                🎯 Chọn mã đề
+                <span class="badge" id="examCountBadge">0 mã đề</span>
             </div>
-            <div class="question-text" id="questionText">Đang tải câu hỏi...</div>
-            <div id="optionsContainer" class="options"></div>
-            <div class="info-note" id="quizHint"></div>
+
+            <!-- Grid of exam code cards -->
+            <div class="exam-grid" id="examGrid"></div>
+
+            <!-- Actions -->
+            <div class="exam-actions">
+                <button class="btn-ghost" id="btnGenExams">🔄 Tạo lại tất cả mã đề</button>
+                <button class="btn-ghost" id="btnAddExam">➕ Thêm mã đề</button>
+            </div>
+
+            <!-- Preview of selected exam -->
+            <div class="exam-preview" id="examPreview">
+                <div class="preview-title">Mã đề đang chọn</div>
+                <div class="preview-code" id="previewCode">—</div>
+                <div style="font-size:0.78rem; color:var(--gray-600); margin-top:4px;" id="previewInfo"></div>
+            </div>
         </div>
 
-        <!-- RESULTS PAGE -->
-        <div id="resultsPage" style="display: none;">
-            <div class="title">📊 Kết quả</div>
-            <div id="circlesContainer" class="results-grid"></div>
-            <div class="restart-home">
-                <button class="outline" id="homeFromResults">🏠 Trang chủ</button>
-            </div>
-            <footer>Xanh: đúng | Đỏ: sai</footer>
+        <div class="divider" id="homeDivider" style="display:none;"></div>
+
+        <!-- START BUTTONS -->
+        <div class="home-buttons">
+            <button class="btn-primary" id="btnNormal">📖 Bắt đầu (Bình thường)</button>
+            <button class="btn-primary" id="btnChallenge" style="background:#ea580c; box-shadow: 0 2px 8px rgba(234,88,12,0.3);">⚡ Thử thách (10s / câu)</button>
+        </div>
+
+        <div class="info-note">
+            ✔ Chế độ thường: hiện đáp án đúng/sai, tự chuyển sau 1s.<br>
+            ✔ Chế độ thử thách: click → chuyển ngay; hết 10s → sai.<br>
+            🔄 Mỗi mã đề chọn ngẫu nhiên <b id="noteQCount">50</b> câu từ kho và xáo trộn đáp án.
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <!-- ===== QUIZ PAGE ===== -->
+    <div id="quizPage" style="display:none;">
+        <div class="quiz-header">
+            <div class="quiz-meta">
+                <button class="btn-ghost" id="exitQuizBtn">🏠 Thoát</button>
+                <span class="quiz-code-badge" id="quizCodeBadge">Mã đề —</span>
+                <span class="quiz-progress" id="quizProgress">0 / 0</span>
+            </div>
+            <div id="timerDisplay" class="timer-box" style="display:none;">⏱ 10s</div>
+        </div>
+        <div class="progress-bar-wrap">
+            <div class="progress-bar" id="progressBar" style="width:0%"></div>
+        </div>
+        <div class="question-text" id="questionText">Đang tải...</div>
+        <div id="optionsContainer" class="options"></div>
+        <div class="quiz-hint" id="quizHint"></div>
+    </div>
+
+    <!-- ===== RESULTS PAGE ===== -->
+    <div id="resultsPage" style="display:none;">
+        <div class="results-title">📊 Kết quả</div>
+        <div class="results-exam-badge" id="resultsExamBadge"></div>
+        <div class="results-summary">
+            <div class="summary-card">
+                <div class="summary-num correct" id="sumCorrect">0</div>
+                <div class="summary-label">Đúng</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-num wrong" id="sumWrong">0</div>
+                <div class="summary-label">Sai</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-num total" id="sumTotal">0</div>
+                <div class="summary-label">Tổng câu</div>
+            </div>
+        </div>
+        <div id="circlesContainer" class="results-grid"></div>
+        <div class="restart-home">
+            <button class="btn-outline" id="homeFromResults">🏠 Trang chủ</button>
+            <button class="btn-primary" id="retryBtn">🔁 Làm lại mã này</button>
+        </div>
+        <footer>🟢 Xanh: đúng &nbsp;|&nbsp; 🔴 Đỏ: sai</footer>
+    </div>
+</div>
+
+<script src="script.js"></script>
 </body>
 </html>
