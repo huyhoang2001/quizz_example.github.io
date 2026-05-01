@@ -71,7 +71,7 @@ function makeRng(seed) {
 function shuffleOptions(question, rng) {
     const origOptions = [...question.options];
     const origCorrect = question.correct;
-    let indices = shuffleArray([0, 1, 2, 3], rng);
+    let indices = shuffleArray(origOptions.map((_, i) => i), rng);
     return {
         text: question.text,
         options: indices.map(i => origOptions[i]),
@@ -254,7 +254,7 @@ function renderCurrentQuestion() {
     questionTextEl.textContent = q.text;
     optionsContainer.innerHTML = '';
 
-    const letters = ['A', 'B', 'C', 'D'];
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
     q.options.forEach((opt, idx) => {
         const div = document.createElement('div');
         div.className = 'option';
@@ -362,7 +362,13 @@ function showResults() {
 // ========== IMPORT ==========
 function afterImportSuccessful() {
     const total = masterQuestions.length;
-    importStatus.textContent = `✅ Đã import thành công ${total} câu hỏi!`;
+    // Chỉ ghi đè status nếu import hoàn toàn sạch (không có lỗi dòng nào)
+    if (!importStatus.innerHTML.includes('❌')) {
+        importStatus.textContent = `✅ Đã import thành công ${total} câu hỏi!`;
+    } else {
+        // Có lỗi một số dòng — thêm dòng tóm tắt vào cuối
+        importStatus.innerHTML += `<br><span style="color:#16a34a;font-weight:600">✅ Đã import ${total} câu hợp lệ</span>`;
+    }
     quantitySelectorDiv.style.display = 'block';
     if (selectedQuantity !== -1 && selectedQuantity > total) {
         selectedQuantity = total;
@@ -379,13 +385,41 @@ function afterImportSuccessful() {
 }
 
 function setNewQuestions(qs) {
-    if (!Array.isArray(qs) || !qs.length) { importStatus.textContent = '❌ File không hợp lệ.'; return false; }
-    for (let q of qs) {
-        if (!q.text || !Array.isArray(q.options) || q.options.length !== 4 || typeof q.correct !== 'number' || q.correct < 0 || q.correct > 3) {
-            importStatus.textContent = '❌ Dữ liệu sai định dạng. Cần: text, options (4), correct (0-3).'; return false;
+    if (!Array.isArray(qs) || !qs.length) { importStatus.textContent = '❌ File không hợp lệ hoặc rỗng.'; return false; }
+    const errors = [];
+    const valid = [];
+    qs.forEach((q, i) => {
+        const rowNum = i + 1;
+        const issues = [];
+        if (!q.text || String(q.text).trim() === '') issues.push('thiếu câu hỏi (text)');
+        if (!Array.isArray(q.options) || q.options.length < 2) {
+            issues.push(`cần ít nhất 2 đáp án (hiện có ${Array.isArray(q.options) ? q.options.length : 0})`);
+        } else {
+            // Lọc bỏ đáp án trống
+            q.options = q.options.map(o => String(o).trim()).filter(o => o !== '');
+            if (q.options.length < 2) issues.push('cần ít nhất 2 đáp án không rỗng');
         }
+        if (typeof q.correct !== 'number' || isNaN(q.correct)) {
+            issues.push('correct không phải số');
+        } else if (Array.isArray(q.options) && (q.correct < 0 || q.correct >= q.options.length)) {
+            issues.push(`correct=${q.correct} vượt ngoài số đáp án (0–${q.options.length - 1})`);
+        }
+        if (issues.length) {
+            errors.push(`Dòng ${rowNum}: ${issues.join(', ')}`);
+        } else {
+            valid.push(q);
+        }
+    });
+
+    if (errors.length) {
+        const preview = errors.slice(0, 5).join('\n');
+        const more = errors.length > 5 ? `\n... và ${errors.length - 5} lỗi khác` : '';
+        importStatus.innerHTML = `❌ Có ${errors.length} dòng lỗi (đã bỏ qua), import ${valid.length} câu hợp lệ:<br><pre style="font-size:0.72rem;text-align:left;background:#fff3f3;padding:8px;border-radius:6px;margin-top:6px;white-space:pre-wrap;color:#b91c1c">${escapeHtml(preview + more)}</pre>`;
+        if (!valid.length) return false;
+        masterQuestions = valid;
+    } else {
+        masterQuestions = valid;
     }
-    masterQuestions = qs;
     afterImportSuccessful();
     return true;
 }
@@ -400,15 +434,36 @@ function handleExcel(file) {
     const r = new FileReader();
     r.onload = e => {
         const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
         if (!rows.length) { importStatus.textContent = '❌ Excel không có dữ liệu.'; return; }
-        const qs = [];
-        for (const row of rows) {
-            if (!row.text || row.option_0 === undefined || row.option_1 === undefined || row.option_2 === undefined || row.option_3 === undefined || row.correct === undefined) {
-                importStatus.textContent = '❌ Thiếu cột. Cần: text, option_0..3, correct'; return;
-            }
-            qs.push({ text: row.text, options: [row.option_0, row.option_1, row.option_2, row.option_3], correct: Number(row.correct) });
+
+        // Kiểm tra cột bắt buộc dựa trên header thực tế
+        const firstRow = rows[0];
+        const allKeys = Object.keys(firstRow);
+        const missing = [];
+        if (!allKeys.includes('text')) missing.push('text');
+        if (!allKeys.includes('correct')) missing.push('correct');
+        // Kiểm tra có ít nhất option_0, option_1
+        if (!allKeys.includes('option_0')) missing.push('option_0');
+        if (!allKeys.includes('option_1')) missing.push('option_1');
+        if (missing.length) {
+            importStatus.innerHTML = `❌ File thiếu cột bắt buộc: <b>${missing.join(', ')}</b><br><span style="font-size:0.75rem;color:#6b7280">Cột hiện có: ${allKeys.join(', ')}</span>`;
+            return;
         }
+
+        const qs = [];
+        rows.forEach((row, i) => {
+            // Gom các option_0..option_5, bỏ qua ô rỗng
+            const opts = ['option_0', 'option_1', 'option_2', 'option_3', 'option_4', 'option_5']
+                .filter(k => allKeys.includes(k))
+                .map(k => String(row[k] ?? '').trim())
+                .filter(v => v !== '');
+            qs.push({
+                text: String(row.text ?? '').trim(),
+                options: opts,
+                correct: Number(row.correct)
+            });
+        });
         setNewQuestions(qs);
     };
     r.readAsArrayBuffer(file);
@@ -419,12 +474,31 @@ function handleTXT(file) {
     r.onload = e => {
         const lines = e.target.result.split(/\r?\n/).filter(l => l.trim());
         const qs = [];
-        for (const line of lines) {
-            const parts = line.split('|');
-            if (parts.length !== 6) { importStatus.textContent = `❌ Dòng cần 6 phần tử (|): ${line.substring(0, 40)}`; return; }
-            const correct = parseInt(parts[5].trim(), 10);
-            if (isNaN(correct) || correct < 0 || correct > 3) { importStatus.textContent = `❌ correct phải 0-3: ${line}`; return; }
-            qs.push({ text: parts[0].trim(), options: parts.slice(1, 5).map(s => s.trim()), correct });
+        const errors = [];
+        lines.forEach((line, i) => {
+            const lineNum = i + 1;
+            const parts = line.split('|').map(s => s.trim());
+            // Định dạng: câu hỏi | đáp án 1 | đáp án 2 [| đáp án 3] [| đáp án 4] | correct
+            // Tối thiểu: text | opt0 | opt1 | correct → 4 phần
+            if (parts.length < 4) {
+                errors.push(`Dòng ${lineNum}: cần ít nhất 4 phần (text|opt0|opt1|correct), hiện có ${parts.length}`);
+                return;
+            }
+            const correct = parseInt(parts[parts.length - 1], 10);
+            const opts = parts.slice(1, parts.length - 1).filter(o => o !== '');
+            if (isNaN(correct) || correct < 0 || correct >= opts.length) {
+                errors.push(`Dòng ${lineNum}: correct=${parts[parts.length - 1]} không hợp lệ (phải 0–${opts.length - 1})`);
+                return;
+            }
+            if (!parts[0]) { errors.push(`Dòng ${lineNum}: câu hỏi rỗng`); return; }
+            qs.push({ text: parts[0], options: opts, correct });
+        });
+
+        if (errors.length) {
+            const preview = errors.slice(0, 5).join('\n');
+            const more = errors.length > 5 ? `\n... và ${errors.length - 5} lỗi khác` : '';
+            importStatus.innerHTML = `❌ ${errors.length} dòng lỗi:<br><pre style="font-size:0.72rem;text-align:left;background:#fff3f3;padding:8px;border-radius:6px;margin-top:6px;white-space:pre-wrap;color:#b91c1c">${escapeHtml(preview + more)}</pre>`;
+            if (!qs.length) return;
         }
         setNewQuestions(qs);
     };
