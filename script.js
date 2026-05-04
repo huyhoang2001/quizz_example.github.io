@@ -303,7 +303,7 @@ function showFeedbackAndNext(selectedIdx, correctIdx, isUserCorrect) {
         optionDivs[correctIdx].classList.add('correct-highlight');
         optionDivs[correctIdx].querySelector('.marker').innerHTML = '✓';
     }
-    feedbackTimeout = setTimeout(moveToNextQuestion, 1000);
+    feedbackTimeout = setTimeout(moveToNextQuestion, 3000);
 }
 
 function moveToNextQuestion() {
