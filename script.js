@@ -15,7 +15,7 @@ let NUM_EXAM_CODES = 5;         // số mã đề mặc định
 
 let currentQuestions = [];
 let TOTAL_QS = 0;
-let currentMode = "normal";
+let currentMode = "normal";     // "normal" | "challenge" | "study"
 let currentIndex = 0;
 let userAnswers = [];
 let timerInterval = null;
@@ -27,6 +27,7 @@ let activeExamCode = null;      // mã đề hiện tại khi quiz
 const homePage = document.getElementById('homePage');
 const quizPage = document.getElementById('quizPage');
 const resultsPage = document.getElementById('resultsPage');
+const reviewPage = document.getElementById('reviewPage');
 const questionTextEl = document.getElementById('questionText');
 const optionsContainer = document.getElementById('optionsContainer');
 const timerDisplay = document.getElementById('timerDisplay');
@@ -103,6 +104,18 @@ function buildExamQuestions(seed) {
     picked = shuffleArray(picked, rng);
     // Shuffle đáp án từng câu
     return picked.map(q => shuffleOptions(q, rng));
+}
+
+// Tạo câu hỏi cho chế độ ôn tập (theo thứ tự file, không xáo trộn câu, không xáo trộn đáp án)
+function buildStudyQuestions() {
+    const qty = getActualQuantity();
+    const picked = masterQuestions.slice(0, Math.min(qty, masterQuestions.length));
+    // Giữ nguyên thứ tự và đáp án gốc
+    return picked.map(q => ({
+        text: q.text,
+        options: [...q.options],
+        correct: q.correct
+    }));
 }
 
 // ========== EXAM CODE MANAGEMENT ==========
@@ -215,6 +228,7 @@ function resetToHome() {
     canAnswer = true; currentIndex = 0; userAnswers = [];
     quizPage.style.display = 'none';
     resultsPage.style.display = 'none';
+    reviewPage.style.display = 'none';
     homePage.style.display = 'block';
     timerDisplay.style.display = 'none';
 }
@@ -225,19 +239,28 @@ function startQuiz(mode) {
     if (!masterQuestions.length) { alert("Chưa có câu hỏi. Hãy import file trước."); return; }
     if (!examCodes.length) { alert("Chưa có mã đề. Hãy import câu hỏi trước."); return; }
 
-    activeExamCode = examCodes[activeExamIndex].code;
-    currentQuestions = getExamQuestions(activeExamIndex);
-    TOTAL_QS = currentQuestions.length;
     currentMode = mode;
+    activeExamCode = examCodes[activeExamIndex].code;
+
+    if (mode === 'study') {
+        // Chế độ ôn tập: theo thứ tự file, không random
+        currentQuestions = buildStudyQuestions();
+        activeExamCode = 'Ôn tập';
+    } else {
+        currentQuestions = getExamQuestions(activeExamIndex);
+    }
+
+    TOTAL_QS = currentQuestions.length;
     currentIndex = 0;
     userAnswers = Array(TOTAL_QS).fill(null).map(() => ({ selected: null, isCorrect: false }));
     canAnswer = true;
 
     homePage.style.display = 'none';
     resultsPage.style.display = 'none';
+    reviewPage.style.display = 'none';
     quizPage.style.display = 'block';
 
-    document.getElementById('quizCodeBadge').textContent = 'Mã đề ' + activeExamCode;
+    document.getElementById('quizCodeBadge').textContent = mode === 'study' ? '📚 Ôn tập' : 'Mã đề ' + activeExamCode;
     renderCurrentQuestion();
 }
 
@@ -267,6 +290,10 @@ function renderCurrentQuestion() {
         timerDisplay.style.display = 'none';
         if (timerInterval) clearInterval(timerInterval);
         quizHint.textContent = '✅ Chọn đáp án → hiện đúng/sai → tự động sang câu mới';
+    } else if (currentMode === 'study') {
+        timerDisplay.style.display = 'none';
+        if (timerInterval) clearInterval(timerInterval);
+        quizHint.textContent = '📚 Ôn tập theo thứ tự • Chọn đáp án → tự chuyển câu';
     } else {
         timerDisplay.style.display = 'flex';
         startChallengeTimer();
@@ -279,7 +306,7 @@ function handleAnswer(selectedIndex) {
     const q = currentQuestions[currentIndex];
     const isCorrect = selectedIndex === q.correct;
     userAnswers[currentIndex] = { selected: selectedIndex, isCorrect };
-    if (currentMode === 'normal') {
+    if (currentMode === 'normal' || currentMode === 'study') {
         showFeedbackAndNext(selectedIndex, q.correct, isCorrect);
     } else {
         if (timerInterval) clearInterval(timerInterval);
@@ -303,7 +330,7 @@ function showFeedbackAndNext(selectedIdx, correctIdx, isUserCorrect) {
         optionDivs[correctIdx].classList.add('correct-highlight');
         optionDivs[correctIdx].querySelector('.marker').innerHTML = '✓';
     }
-    feedbackTimeout = setTimeout(moveToNextQuestion, 3000);
+    feedbackTimeout = setTimeout(moveToNextQuestion, 1000);
 }
 
 function moveToNextQuestion() {
@@ -347,7 +374,10 @@ function showResults() {
     document.getElementById('sumCorrect').textContent = correctCount;
     document.getElementById('sumWrong').textContent = wrongCount;
     document.getElementById('sumTotal').textContent = TOTAL_QS;
-    document.getElementById('resultsExamBadge').innerHTML = `Mã đề <strong>${activeExamCode}</strong> • ${currentMode === 'normal' ? 'Bình thường' : 'Thử thách'}`;
+
+    const modeLabel = currentMode === 'normal' ? 'Bình thường' : currentMode === 'challenge' ? 'Thử thách' : 'Ôn tập';
+    const examLabel = currentMode === 'study' ? '📚 Ôn tập' : `Mã đề <strong>${activeExamCode}</strong>`;
+    document.getElementById('resultsExamBadge').innerHTML = `${examLabel} • ${modeLabel}`;
 
     const container = document.getElementById('circlesContainer');
     container.innerHTML = '';
@@ -357,6 +387,66 @@ function showResults() {
         circle.textContent = i + 1;
         container.appendChild(circle);
     }
+}
+
+// ========== REVIEW PAGE ==========
+function showReview() {
+    resultsPage.style.display = 'none';
+    reviewPage.style.display = 'block';
+
+    const modeLabel = currentMode === 'normal' ? 'Bình thường' : currentMode === 'challenge' ? 'Thử thách' : 'Ôn tập';
+    const examLabel = currentMode === 'study' ? '📚 Ôn tập' : `Mã đề ${activeExamCode}`;
+    document.getElementById('reviewBadge').textContent = `${examLabel} • ${modeLabel}`;
+
+    const container = document.getElementById('reviewContainer');
+    container.innerHTML = '';
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+    currentQuestions.forEach((q, i) => {
+        const ans = userAnswers[i];
+        const isCorrect = ans?.isCorrect;
+        const selected = ans?.selected;
+        const skipped = selected === null || selected === undefined;
+
+        const item = document.createElement('div');
+        item.className = `review-item ${isCorrect ? 'review-correct' : 'review-wrong'}`;
+
+        const statusText = skipped ? '⏰ Bỏ qua' : isCorrect ? '✓ Đúng' : '✗ Sai';
+
+        item.innerHTML = `
+            <div class="review-item-header">
+                <div class="review-item-num">${i + 1}</div>
+                <span>${statusText}</span>
+            </div>
+            <div class="review-item-body">
+                <div class="review-question">${escapeHtml(q.text)}</div>
+                <div class="review-options">
+                    ${q.options.map((opt, idx) => {
+                        let cls = '';
+                        let icon = '';
+                        if (idx === q.correct) {
+                            cls = 'opt-correct';
+                            icon = '✓';
+                        } else if (!skipped && idx === selected && !isCorrect) {
+                            cls = 'opt-wrong-selected';
+                            icon = '✗';
+                        }
+                        if (skipped && idx === q.correct) {
+                            cls = 'opt-correct';
+                            icon = '✓';
+                        }
+                        return `<div class="review-option ${cls}">
+                            <span class="review-option-prefix">${letters[idx]}.</span>
+                            <span>${escapeHtml(opt)}</span>
+                            ${icon ? `<span class="review-option-icon">${icon}</span>` : ''}
+                        </div>`;
+                    }).join('')}
+                    ${skipped ? `<div style="font-size:0.75rem;color:#c2410c;margin-top:4px;">⏰ Hết giờ — không chọn đáp án</div>` : ''}
+                </div>
+            </div>
+        `;
+        container.appendChild(item);
+    });
 }
 
 // ========== IMPORT ==========
@@ -546,13 +636,26 @@ document.getElementById('btnAddExam').addEventListener('click', () => {
 // Quiz start
 document.getElementById('btnNormal').addEventListener('click', () => startQuiz('normal'));
 document.getElementById('btnChallenge').addEventListener('click', () => startQuiz('challenge'));
+document.getElementById('btnStudy').addEventListener('click', () => startQuiz('study'));
 
 // Exit / home
 exitQuizBtn.addEventListener('click', () => { if (confirm('Về trang chủ? Tiến trình sẽ mất.')) resetToHome(); });
 homeFromResults.addEventListener('click', resetToHome);
 retryBtn.addEventListener('click', () => {
     // Làm lại cùng mã đề (reset questions cache để tạo lại từ seed)
-    examCodes[activeExamIndex].questions = null;
+    if (currentMode !== 'study') examCodes[activeExamIndex].questions = null;
+    startQuiz(currentMode);
+});
+
+// Review buttons
+document.getElementById('reviewBtn').addEventListener('click', showReview);
+document.getElementById('backFromReview').addEventListener('click', () => {
+    reviewPage.style.display = 'none';
+    resultsPage.style.display = 'block';
+});
+document.getElementById('homeFromReview').addEventListener('click', resetToHome);
+document.getElementById('retryFromReview').addEventListener('click', () => {
+    if (currentMode !== 'study') examCodes[activeExamIndex].questions = null;
     startQuiz(currentMode);
 });
 
