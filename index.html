@@ -67,11 +67,13 @@
         <div class="home-buttons">
             <button class="btn-primary" id="btnNormal">📖 Bắt đầu (Bình thường)</button>
             <button class="btn-primary" id="btnChallenge" style="background:#ea580c; box-shadow: 0 2px 8px rgba(234,88,12,0.3);">⚡ Thử thách (10s / câu)</button>
+            <button class="btn-primary" id="btnStudy" style="background:#16a34a; box-shadow: 0 2px 8px rgba(22,163,74,0.3);">📚 Ôn tập (theo thứ tự)</button>
         </div>
 
         <div class="info-note">
             ✔ Chế độ thường: hiện đáp án đúng/sai, tự chuyển sau 1s.<br>
             ✔ Chế độ thử thách: click → chuyển ngay; hết 10s → sai.<br>
+            ✔ Chế độ ôn tập: câu hỏi theo thứ tự file, không xáo trộn.<br>
             🔄 Mỗi mã đề chọn ngẫu nhiên <b id="noteQCount">50</b> câu từ kho và xáo trộn đáp án.
         </div>
     </div>
@@ -116,8 +118,23 @@
         <div class="restart-home">
             <button class="btn-outline" id="homeFromResults">🏠 Trang chủ</button>
             <button class="btn-primary" id="retryBtn">🔁 Làm lại mã này</button>
+            <button class="btn-review" id="reviewBtn">🔍 Xem lại kết quả</button>
         </div>
         <footer>🟢 Xanh: đúng &nbsp;|&nbsp; 🔴 Đỏ: sai</footer>
+    </div>
+
+    <!-- ===== REVIEW PAGE ===== -->
+    <div id="reviewPage" style="display:none;">
+        <div class="review-header">
+            <button class="btn-ghost" id="backFromReview">← Quay lại kết quả</button>
+            <div class="review-title">🔍 Xem lại toàn bộ</div>
+            <div class="review-badge" id="reviewBadge"></div>
+        </div>
+        <div id="reviewContainer" class="review-container"></div>
+        <div class="review-footer">
+            <button class="btn-outline" id="homeFromReview">🏠 Trang chủ</button>
+            <button class="btn-primary" id="retryFromReview">🔁 Làm lại</button>
+        </div>
     </div>
 </div>
 <script src="script.js"></script>
