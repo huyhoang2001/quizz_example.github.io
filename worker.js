@@ -4,18 +4,15 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:5500",
 ];
 
-const NVIDIA_API_URL =
-  "https://integrate.api.nvidia.com/v1/chat/completions";
+const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 
-const DEFAULT_MODELS = [
-  "meta/llama-3.3-70b-instruct",
-];
+const DEFAULT_MODELS = ["meta/llama-3.3-70b-instruct"];
 
 const MIN_WORDS = 500;
 const MAX_CHARS = 30000;
-const MODEL_TIMEOUT_MS = 55000;
-const RETRIES_PER_MODEL = 2;
-const MAX_OUTPUT_TOKENS = 4200;
+const MODEL_TIMEOUT_MS = 40000;
+const RETRIES_PER_MODEL = 1;
+const MAX_OUTPUT_TOKENS = 3200;
 
 const RUBRIC = [
   {
@@ -82,11 +79,7 @@ export default {
     }
 
     if (url.pathname !== "/grade") {
-      return jsonResponse(
-        { error: "Không tìm thấy endpoint." },
-        404,
-        origin,
-      );
+      return jsonResponse({ error: "Không tìm thấy endpoint." }, 404, origin);
     }
 
     if (request.method !== "POST") {
@@ -110,8 +103,7 @@ export default {
     if (!env.NVIDIA_API_KEY) {
       return jsonResponse(
         {
-          error:
-            "Cloudflare Worker chưa được cấu hình NVIDIA_API_KEY.",
+          error: "Cloudflare Worker chưa được cấu hình NVIDIA_API_KEY.",
         },
         500,
         origin,
@@ -175,10 +167,9 @@ export default {
       if (studentAnswer.length > MAX_CHARS) {
         return jsonResponse(
           {
-            error:
-              `Bài làm vượt quá ${MAX_CHARS.toLocaleString(
-                "vi-VN",
-              )} ký tự.`,
+            error: `Bài làm vượt quá ${MAX_CHARS.toLocaleString(
+              "vi-VN",
+            )} ký tự.`,
           },
           400,
           origin,
@@ -199,10 +190,7 @@ export default {
       try {
         parsedResult = JSON.parse(aiResponse.text);
       } catch {
-        console.error(
-          "NVIDIA trả JSON không hợp lệ:",
-          aiResponse.text,
-        );
+        console.error("NVIDIA trả JSON không hợp lệ:", aiResponse.text);
 
         return jsonResponse(
           {
@@ -215,10 +203,7 @@ export default {
         );
       }
 
-      const sanitizedResult = sanitizeResult(
-        parsedResult,
-        wordCount,
-      );
+      const sanitizedResult = sanitizeResult(parsedResult, wordCount);
 
       return jsonResponse(
         {
@@ -252,9 +237,7 @@ function getNvidiaModels(env) {
     .map((model) => model.trim())
     .filter(Boolean);
 
-  return configured.length > 0
-    ? [...new Set(configured)]
-    : DEFAULT_MODELS;
+  return configured.length > 0 ? [...new Set(configured)] : DEFAULT_MODELS;
 }
 
 async function callNvidiaWithFallback({
@@ -266,11 +249,7 @@ async function callNvidiaWithFallback({
   const failures = [];
 
   for (const model of models) {
-    for (
-      let attempt = 1;
-      attempt <= RETRIES_PER_MODEL;
-      attempt += 1
-    ) {
+    for (let attempt = 1; attempt <= RETRIES_PER_MODEL; attempt += 1) {
       try {
         console.log(
           `Calling NVIDIA model ${model}, attempt ${attempt}/${RETRIES_PER_MODEL}`,
@@ -306,19 +285,17 @@ async function callNvidiaWithFallback({
         );
 
         if (failure.status === 401) {
-          throw new Error(
-            "NVIDIA_API_KEY không hợp lệ hoặc đã hết hiệu lực.",
-          );
+          throw new Error("NVIDIA_API_KEY không hợp lệ hoặc đã hết hiệu lực.");
         }
 
         if (
           failure.status === 400 ||
           failure.status === 403 ||
-          failure.status === 404
+          failure.status === 404 ||
+          failure.status === 410
         ) {
           break;
         }
-
         const retryable =
           failure.status === 0 ||
           failure.status === 408 ||
@@ -328,45 +305,32 @@ async function callNvidiaWithFallback({
           failure.status === 503 ||
           failure.status === 504;
 
-        if (
-          !retryable ||
-          attempt === RETRIES_PER_MODEL
-        ) {
+        if (!retryable || attempt === RETRIES_PER_MODEL) {
           break;
         }
 
         const waitMs =
-          1200 * 2 ** (attempt - 1) +
-          Math.floor(Math.random() * 700);
+          1200 * 2 ** (attempt - 1) + Math.floor(Math.random() * 700);
 
-        console.warn(
-          `Retrying ${model} after ${waitMs} ms`,
-        );
+        console.warn(`Retrying ${model} after ${waitMs} ms`);
 
         await sleep(waitMs);
       }
     }
 
-    console.warn(
-      `Switching to next NVIDIA model after failure: ${model}`,
-    );
+    console.warn(`Switching to next NVIDIA model after failure: ${model}`);
   }
 
-  console.error(
-    "All NVIDIA models failed:",
-    failures,
-  );
+  console.error("All NVIDIA models failed:", failures);
 
   const summary = failures
     .map(
-      (item) =>
-        `${item.model} (HTTP ${item.status || "?"}): ${item.message}`,
+      (item) => `${item.model} (HTTP ${item.status || "?"}): ${item.message}`,
     )
     .join(" | ");
 
   throw new Error(
-    "Các model AI hiện đều đang bận hoặc không khả dụng. " +
-      summary,
+    "Các model AI hiện đều đang bận hoặc không khả dụng. " + summary,
   );
 }
 
@@ -378,10 +342,7 @@ async function callSingleNvidiaModel({
 }) {
   const controller = new AbortController();
 
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    MODEL_TIMEOUT_MS,
-  );
+  const timeoutId = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
 
   try {
     const response = await fetch(NVIDIA_API_URL, {
@@ -401,10 +362,7 @@ async function callSingleNvidiaModel({
           },
           {
             role: "user",
-            content: buildUserPrompt(
-              studentAnswer,
-              wordCount,
-            ),
+            content: buildUserPrompt(studentAnswer, wordCount),
           },
         ],
         temperature: 0.15,
@@ -434,31 +392,22 @@ async function callSingleNvidiaModel({
         data?.rawText ||
         `HTTP ${response.status}`;
 
-      throw createProviderError(
-        response.status,
-        String(message),
-      );
+      throw createProviderError(response.status, String(message));
     }
 
-    const content =
-      data?.choices?.[0]?.message?.content;
+    const content = data?.choices?.[0]?.message?.content;
 
     const generatedText = Array.isArray(content)
       ? content
           .map((part) =>
-            typeof part === "string"
-              ? part
-              : part?.text || part?.content || "",
+            typeof part === "string" ? part : part?.text || part?.content || "",
           )
           .join("")
           .trim()
       : String(content || "").trim();
 
     if (!generatedText) {
-      throw createProviderError(
-        502,
-        `Model ${model} không trả về nội dung.`,
-      );
+      throw createProviderError(502, `Model ${model} không trả về nội dung.`);
     }
 
     return extractJsonObject(generatedText);
@@ -478,8 +427,7 @@ async function callSingleNvidiaModel({
 
 function buildSystemPrompt() {
   const rubricText = RUBRIC.map(
-    (item, index) =>
-      `${index + 1}. ${item.name}: ${item.maxScore} điểm`,
+    (item, index) => `${index + 1}. ${item.name}: ${item.maxScore} điểm`,
   ).join("\n");
 
   return `
@@ -694,10 +642,7 @@ JSON PHẢI CÓ CẤU TRÚC:
 `.trim();
 }
 
-function buildUserPrompt(
-  studentAnswer,
-  wordCount,
-) {
+function buildUserPrompt(studentAnswer, wordCount) {
   return `
 Hãy chấm, phát hiện lỗi và hướng dẫn sửa bài nghị luận xã hội dưới đây.
 
@@ -772,97 +717,46 @@ NHIỆM VỤ BẮT BUỘC:
 }
 
 function sanitizeResult(result, wordCount) {
-  const receivedCriteria = Array.isArray(
-    result?.criteria,
-  )
+  const receivedCriteria = Array.isArray(result?.criteria)
     ? result.criteria
     : [];
 
-  const criteria = RUBRIC.map(
-    (expected, index) => {
-      const received =
-        receivedCriteria[index] || {};
+  const criteria = RUBRIC.map((expected, index) => {
+    const received = receivedCriteria[index] || {};
 
-      return {
-        name: expected.name,
-        score: roundToTenth(
-          clamp(
-            Number(received.score),
-            0,
-            expected.maxScore,
-          ),
-        ),
-        maxScore: expected.maxScore,
-        comment: limitString(
-          received.comment ||
-            "Chưa có nhận xét.",
-          1800,
-        ),
-        evidence: limitString(
-          received.evidence || "",
-          600,
-        ),
-        nextStep: limitString(
-          received.nextStep || "",
-          1200,
-        ),
-      };
-    },
-  );
+    return {
+      name: expected.name,
+      score: roundToTenth(clamp(Number(received.score), 0, expected.maxScore)),
+      maxScore: expected.maxScore,
+      comment: limitString(received.comment || "Chưa có nhận xét.", 1800),
+      evidence: limitString(received.evidence || "", 600),
+      nextStep: limitString(received.nextStep || "", 1200),
+    };
+  });
 
   const totalScore = roundToTenth(
-    criteria.reduce(
-      (sum, item) => sum + item.score,
-      0,
-    ),
+    criteria.reduce((sum, item) => sum + item.score, 0),
   );
 
   return {
-    essayType: limitString(
-      result?.essayType || "",
-      120,
-    ),
-    centralIssue: limitString(
-      result?.centralIssue || "",
-      800,
-    ),
+    essayType: limitString(result?.essayType || "", 120),
+    centralIssue: limitString(result?.centralIssue || "", 800),
     totalScore,
     wordCount,
     level: levelFromScore(totalScore),
     overallComment: limitString(
-      result?.overallComment ||
-        "AI chưa cung cấp nhận xét tổng quát.",
+      result?.overallComment || "AI chưa cung cấp nhận xét tổng quát.",
       2500,
     ),
     criteria,
-    strengths: sanitizeStringArray(
-      result?.strengths,
-      8,
-    ),
-    weaknesses: sanitizeStringArray(
-      result?.weaknesses,
-      8,
-    ),
-    paragraphFeedback:
-      sanitizeParagraphFeedback(
-        result?.paragraphFeedback,
-      ),
-    evidenceReview:
-      sanitizeEvidenceReview(
-        result?.evidenceReview,
-      ),
+    strengths: sanitizeStringArray(result?.strengths, 8),
+    weaknesses: sanitizeStringArray(result?.weaknesses, 8),
+    paragraphFeedback: sanitizeParagraphFeedback(result?.paragraphFeedback),
+    evidenceReview: sanitizeEvidenceReview(result?.evidenceReview),
     errors: sanitizeErrors(result?.errors),
-    addedIdeas: sanitizeAddedIdeas(
-      result?.addedIdeas,
-    ),
-    improvedOutline: sanitizeStringArray(
-      result?.improvedOutline,
-      8,
-    ),
-    revisedPassage: limitString(
-      result?.revisedPassage || "",
-      7000,
-    ),
+    addedIdeas: sanitizeAddedIdeas(result?.addedIdeas),
+    improvedOutline: sanitizeStringArray(result?.improvedOutline, 8),
+    revisedPassage: limitString(result?.revisedPassage || "", 7000),
   };
 }
 
@@ -874,29 +768,17 @@ function sanitizeParagraphFeedback(value) {
   return value.slice(0, 6).map((item) => {
     const allowed = ["good", "warning", "bad"];
 
-    const status = allowed.includes(item?.status)
-      ? item.status
-      : "warning";
+    const status = allowed.includes(item?.status) ? item.status : "warning";
 
     return {
-      section: limitString(
-        item?.section || "Phần bài viết",
-        150,
-      ),
+      section: limitString(item?.section || "Phần bài viết", 150),
       status,
       statusLabel: limitString(
-        item?.statusLabel ||
-          statusLabelFromStatus(status),
+        item?.statusLabel || statusLabelFromStatus(status),
         100,
       ),
-      comment: limitString(
-        item?.comment || "",
-        1500,
-      ),
-      suggestion: limitString(
-        item?.suggestion || "",
-        1500,
-      ),
+      comment: limitString(item?.comment || "", 1500),
+      suggestion: limitString(item?.suggestion || "", 1500),
     };
   });
 }
@@ -907,26 +789,11 @@ function sanitizeEvidenceReview(value) {
   }
 
   return value.slice(0, 8).map((item) => ({
-    evidence: limitString(
-      item?.evidence || "",
-      700,
-    ),
-    relevance: limitString(
-      item?.relevance || "",
-      700,
-    ),
-    accuracyNote: limitString(
-      item?.accuracyNote || "",
-      700,
-    ),
-    analysisQuality: limitString(
-      item?.analysisQuality || "",
-      900,
-    ),
-    improvement: limitString(
-      item?.improvement || "",
-      900,
-    ),
+    evidence: limitString(item?.evidence || "", 700),
+    relevance: limitString(item?.relevance || "", 700),
+    accuracyNote: limitString(item?.accuracyNote || "", 700),
+    analysisQuality: limitString(item?.analysisQuality || "", 900),
+    improvement: limitString(item?.improvement || "", 900),
   }));
 }
 
@@ -936,22 +803,10 @@ function sanitizeErrors(value) {
   }
 
   return value.slice(0, 12).map((item) => ({
-    type: limitString(
-      item?.type || "Diễn đạt",
-      120,
-    ),
-    original: limitString(
-      item?.original || "",
-      1000,
-    ),
-    correction: limitString(
-      item?.correction || "",
-      1500,
-    ),
-    explanation: limitString(
-      item?.explanation || "",
-      1500,
-    ),
+    type: limitString(item?.type || "Diễn đạt", 120),
+    original: limitString(item?.original || "", 1000),
+    correction: limitString(item?.correction || "", 1500),
+    explanation: limitString(item?.explanation || "", 1500),
   }));
 }
 
@@ -961,22 +816,10 @@ function sanitizeAddedIdeas(value) {
   }
 
   return value.slice(0, 6).map((item) => ({
-    idea: limitString(
-      item?.idea || "",
-      1000,
-    ),
-    why: limitString(
-      item?.why || "",
-      1500,
-    ),
-    insertionPoint: limitString(
-      item?.insertionPoint || "",
-      700,
-    ),
-    sampleSentence: limitString(
-      item?.sampleSentence || "",
-      1800,
-    ),
+    idea: limitString(item?.idea || "", 1000),
+    why: limitString(item?.why || "", 1500),
+    insertionPoint: limitString(item?.insertionPoint || "", 700),
+    sampleSentence: limitString(item?.sampleSentence || "", 1800),
   }));
 }
 
@@ -992,18 +835,14 @@ function handlePreflight(request, origin) {
   }
 
   const requestedHeaders =
-    request.headers.get(
-      "Access-Control-Request-Headers",
-    ) || "Content-Type";
+    request.headers.get("Access-Control-Request-Headers") || "Content-Type";
 
   return new Response(null, {
     status: 204,
     headers: {
       "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods":
-        "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers":
-        requestedHeaders,
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": requestedHeaders,
       "Access-Control-Max-Age": "86400",
       Vary: "Origin",
     },
@@ -1014,56 +853,36 @@ function isOriginAllowed(origin) {
   return ALLOWED_ORIGINS.includes(origin);
 }
 
-function jsonResponse(
-  data,
-  status,
-  origin,
-) {
+function jsonResponse(data, status, origin) {
   const headers = {
-    "Content-Type":
-      "application/json; charset=utf-8",
-    "Cache-Control":
-      "no-store, no-cache, must-revalidate",
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store, no-cache, must-revalidate",
     "X-Content-Type-Options": "nosniff",
     Vary: "Origin",
   };
 
   if (isOriginAllowed(origin)) {
-    headers["Access-Control-Allow-Origin"] =
-      origin;
-    headers["Access-Control-Allow-Methods"] =
-      "GET, POST, OPTIONS";
-    headers["Access-Control-Allow-Headers"] =
-      "Content-Type";
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
+    headers["Access-Control-Allow-Headers"] = "Content-Type";
   }
 
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers,
-    },
-  );
+  return new Response(JSON.stringify(data), {
+    status,
+    headers,
+  });
 }
 
-function jsonResponseWithoutCors(
-  data,
-  status,
-) {
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers: {
-        "Content-Type":
-          "application/json; charset=utf-8",
-        "Cache-Control": "no-store",
-        "X-Content-Type-Options":
-          "nosniff",
-        Vary: "Origin",
-      },
+function jsonResponseWithoutCors(data, status) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      Vary: "Origin",
     },
-  );
+  });
 }
 
 function extractJsonObject(text) {
@@ -1082,21 +901,14 @@ function extractJsonObject(text) {
   const start = cleaned.indexOf("{");
 
   if (start === -1) {
-    throw createProviderError(
-      502,
-      "AI không trả về đối tượng JSON.",
-    );
+    throw createProviderError(502, "AI không trả về đối tượng JSON.");
   }
 
   let depth = 0;
   let inString = false;
   let escaped = false;
 
-  for (
-    let index = start;
-    index < cleaned.length;
-    index += 1
-  ) {
+  for (let index = start; index < cleaned.length; index += 1) {
     const character = cleaned[index];
 
     if (escaped) {
@@ -1104,10 +916,7 @@ function extractJsonObject(text) {
       continue;
     }
 
-    if (
-      character === "\\" &&
-      inString
-    ) {
+    if (character === "\\" && inString) {
       escaped = true;
       continue;
     }
@@ -1130,10 +939,7 @@ function extractJsonObject(text) {
     }
 
     if (depth === 0) {
-      const candidate = cleaned.slice(
-        start,
-        index + 1,
-      );
+      const candidate = cleaned.slice(start, index + 1);
 
       try {
         JSON.parse(candidate);
@@ -1144,10 +950,7 @@ function extractJsonObject(text) {
     }
   }
 
-  throw createProviderError(
-    502,
-    "AI trả kết quả JSON không hợp lệ.",
-  );
+  throw createProviderError(502, "AI trả kết quả JSON không hợp lệ.");
 }
 
 function createProviderError(status, message) {
@@ -1158,28 +961,18 @@ function createProviderError(status, message) {
 
 function normalizeProviderError(error) {
   return {
-    status:
-      Number(error?.status) ||
-      (error?.name === "AbortError" ? 408 : 0),
-    message:
-      error instanceof Error
-        ? error.message
-        : String(error),
+    status: Number(error?.status) || (error?.name === "AbortError" ? 408 : 0),
+    message: error instanceof Error ? error.message : String(error),
   };
 }
 
 function sleep(ms) {
-  return new Promise((resolve) =>
-    setTimeout(resolve, ms),
-  );
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeText(value) {
   return String(value || "")
-    .replace(
-      /[\u200B-\u200D\uFEFF]/g,
-      "",
-    )
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .replace(/\r\n/g, "\n")
     .trim();
 }
@@ -1189,25 +982,17 @@ function countWords(text) {
     return 0;
   }
 
-  return text
-    .split(/\s+/u)
-    .filter(Boolean)
-    .length;
+  return text.split(/\s+/u).filter(Boolean).length;
 }
 
-function sanitizeStringArray(
-  value,
-  maxItems,
-) {
+function sanitizeStringArray(value, maxItems) {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return value
     .slice(0, maxItems)
-    .map((item) =>
-      limitString(item, 1200),
-    )
+    .map((item) => limitString(item, 1200))
     .filter(Boolean);
 }
 
@@ -1248,18 +1033,11 @@ function clamp(value, min, max) {
     return min;
   }
 
-  return Math.min(
-    max,
-    Math.max(min, value),
-  );
+  return Math.min(max, Math.max(min, value));
 }
 
 function roundToTenth(value) {
-  return (
-    Math.round(
-      (value + Number.EPSILON) * 10,
-    ) / 10
-  );
+  return Math.round((value + Number.EPSILON) * 10) / 10;
 }
 
 function limitString(value, maxLength) {
