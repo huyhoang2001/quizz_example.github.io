@@ -3,4 +3,4 @@ main = "worker.js"
 compatibility_date = "2026-07-22"
 
 [vars]
-NVIDIA_MODEL = "meta/llama-3.3-70b-instruct"
+NVIDIA_MODELS = "meta/llama-3.3-70b-instruct,zai-org/glm-5.1,qwen/qwen3-32b,qwen/qwen3-next-80b-a3b-instruct,deepseek-ai/deepseek-r1,deepseek-ai/deepseek-v4-pro,google/gemma-3-1b-it,mistralai/mistral-small-24b-instruct-2501,nvidia/llama-3.3-nemotron-super-49b-v1.5,meta/llama-3.1-405b-instruct,microsoft/phi-4-mini-instruct"
