@@ -3,6 +3,6 @@ main = "worker.js"
 compatibility_date = "2026-07-22"
 
 [vars]
-OPENROUTER_MODELS = "google/gemma-4-31b-it:free,openrouter/free"
-OPENROUTER_MODEL_TIMEOUT_MS = "60000"
-OPENROUTER_MAX_OUTPUT_TOKENS = "3600"
+OPENROUTER_MODELS = "nvidia/nemotron-3.5-content-safety:free"
+OPENROUTER_MODEL_TIMEOUT_MS = "100000"
+OPENROUTER_MAX_OUTPUT_TOKENS = "2800"

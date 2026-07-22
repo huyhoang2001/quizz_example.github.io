@@ -5,11 +5,11 @@ const ALLOWED_ORIGINS = [
 ];
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_MODELS = ["google/gemma-4-31b-it:free"];
+const DEFAULT_MODELS = ["nvidia/nemotron-3.5-content-safety:free"];
 const APP_REFERER = "https://huyhoang2001.github.io/quizz_example.github.io/";
-const APP_TITLE = "AI Chấm Bài Tự Luận VB2 Công An";
+const APP_TITLE = "AI cham bai tu luan";
 
-const MIN_WORDS = 500;
+const MIN_WORDS = 200;
 const MAX_CHARS = 30000;
 const DEFAULT_MODEL_TIMEOUT_MS = 60000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 3600;
