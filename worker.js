@@ -1,14 +1,21 @@
+
 const ALLOWED_ORIGINS = [
   "https://huyhoang2001.github.io",
   "http://localhost:5500",
   "http://127.0.0.1:5500",
 ];
 
+const NVIDIA_API_URL =
+  "https://integrate.api.nvidia.com/v1/chat/completions";
+
+const DEFAULT_MODEL =
+  "meta/llama-3.3-70b-instruct";
+
 const MIN_WORDS = 500;
 const MAX_CHARS = 30000;
-const GEMINI_TIMEOUT_MS = 90000;
+const TIMEOUT_MS = 120000;
 
-const CRITERIA = [
+const RUBRIC = [
   {
     name: "Cấu trúc bài nghị luận",
     maxScore: 2,
@@ -39,257 +46,18 @@ const CRITERIA = [
   },
 ];
 
-/**
- * Schema JSON Gemini bắt buộc phải trả về.
- * Frontend essay-grader.js đang đọc đúng các trường này.
- */
-const JSON_SCHEMA = {
-  type: "object",
-  required: [
-    "totalScore",
-    "wordCount",
-    "level",
-    "overallComment",
-    "criteria",
-    "strengths",
-    "weaknesses",
-    "paragraphFeedback",
-    "errors",
-    "addedIdeas",
-    "improvedOutline",
-    "revisedPassage",
-  ],
-  properties: {
-    totalScore: {
-      type: "number",
-      minimum: 0,
-      maximum: 10,
-    },
-
-    wordCount: {
-      type: "integer",
-      minimum: 0,
-    },
-
-    level: {
-      type: "string",
-      enum: [
-        "Chưa đạt",
-        "Trung bình",
-        "Khá",
-        "Giỏi",
-        "Xuất sắc",
-      ],
-    },
-
-    overallComment: {
-      type: "string",
-    },
-
-    criteria: {
-      type: "array",
-      minItems: 7,
-      maxItems: 7,
-      items: {
-        type: "object",
-        required: [
-          "name",
-          "score",
-          "maxScore",
-          "comment",
-          "evidence",
-          "nextStep",
-        ],
-        properties: {
-          name: {
-            type: "string",
-          },
-          score: {
-            type: "number",
-            minimum: 0,
-            maximum: 2.5,
-          },
-          maxScore: {
-            type: "number",
-          },
-          comment: {
-            type: "string",
-          },
-          evidence: {
-            type: "string",
-          },
-          nextStep: {
-            type: "string",
-          },
-        },
-      },
-    },
-
-    strengths: {
-      type: "array",
-      minItems: 1,
-      maxItems: 8,
-      items: {
-        type: "string",
-      },
-    },
-
-    weaknesses: {
-      type: "array",
-      minItems: 1,
-      maxItems: 8,
-      items: {
-        type: "string",
-      },
-    },
-
-    paragraphFeedback: {
-      type: "array",
-      minItems: 5,
-      maxItems: 6,
-      items: {
-        type: "object",
-        required: [
-          "section",
-          "status",
-          "statusLabel",
-          "comment",
-          "suggestion",
-        ],
-        properties: {
-          section: {
-            type: "string",
-          },
-          status: {
-            type: "string",
-            enum: [
-              "good",
-              "warning",
-              "bad",
-            ],
-          },
-          statusLabel: {
-            type: "string",
-          },
-          comment: {
-            type: "string",
-          },
-          suggestion: {
-            type: "string",
-          },
-        },
-      },
-    },
-
-    errors: {
-      type: "array",
-      maxItems: 12,
-      items: {
-        type: "object",
-        required: [
-          "type",
-          "original",
-          "correction",
-          "explanation",
-        ],
-        properties: {
-          type: {
-            type: "string",
-          },
-          original: {
-            type: "string",
-          },
-          correction: {
-            type: "string",
-          },
-          explanation: {
-            type: "string",
-          },
-        },
-      },
-    },
-
-    addedIdeas: {
-      type: "array",
-      minItems: 2,
-      maxItems: 6,
-      items: {
-        type: "object",
-        required: [
-          "idea",
-          "why",
-          "insertionPoint",
-          "sampleSentence",
-        ],
-        properties: {
-          idea: {
-            type: "string",
-          },
-          why: {
-            type: "string",
-          },
-          insertionPoint: {
-            type: "string",
-          },
-          sampleSentence: {
-            type: "string",
-          },
-        },
-      },
-    },
-
-    improvedOutline: {
-      type: "array",
-      minItems: 5,
-      maxItems: 8,
-      items: {
-        type: "string",
-      },
-    },
-
-    revisedPassage: {
-      type: "string",
-    },
-  },
-};
-
 export default {
-  /**
-   * @param {Request} request
-   * @param {{ GEMINI_API_KEY: string, GEMINI_MODEL?: string }} env
-   */
   async fetch(request, env) {
-    const origin = request.headers.get("Origin") || "";
     const url = new URL(request.url);
+    const origin =
+      request.headers.get("Origin") || "";
 
-    /*
-     * CORS PREFLIGHT
-     *
-     * Quan trọng:
-     * Không trả Access-Control-Allow-Origin: null.
-     * Chỉ trả đúng origin nếu origin nằm trong danh sách cho phép.
-     */
+    // Xử lý CORS preflight.
     if (request.method === "OPTIONS") {
-      if (!isOriginAllowed(origin)) {
-        return new Response(null, {
-          status: 403,
-          headers: {
-            "Content-Type": "text/plain; charset=utf-8",
-            "Cache-Control": "no-store",
-            "Vary": "Origin",
-          },
-        });
-      }
-
-      return new Response(null, {
-        status: 204,
-        headers: createCorsHeaders(origin, request),
-      });
+      return handleOptions(request, origin);
     }
 
-    /*
-     * HEALTH CHECK
-     */
+    // Kiểm tra hoạt động của Worker.
     if (url.pathname === "/health") {
       if (request.method !== "GET") {
         return jsonResponse(
@@ -306,7 +74,13 @@ export default {
         {
           ok: true,
           service: "essay-grader-api",
-          geminiConfigured: Boolean(env.GEMINI_API_KEY),
+          provider: "NVIDIA NIM",
+          nvidiaConfigured: Boolean(
+            env.NVIDIA_API_KEY,
+          ),
+          model:
+            env.NVIDIA_MODEL ||
+            DEFAULT_MODEL,
           timestamp: new Date().toISOString(),
         },
         200,
@@ -314,9 +88,7 @@ export default {
       );
     }
 
-    /*
-     * CHỈ CHẤP NHẬN POST /grade
-     */
+    // Endpoint không tồn tại.
     if (url.pathname !== "/grade") {
       return jsonResponse(
         {
@@ -327,50 +99,60 @@ export default {
       );
     }
 
+    // /grade chỉ nhận POST.
     if (request.method !== "POST") {
       return jsonResponse(
         {
-          error: "Endpoint /grade chỉ chấp nhận phương thức POST.",
+          error:
+            "Endpoint /grade chỉ chấp nhận phương thức POST.",
         },
         405,
         origin,
       );
     }
 
-    /*
-     * KIỂM TRA ORIGIN
-     */
+    // Kiểm tra website gọi API.
     if (!isOriginAllowed(origin)) {
-      return jsonResponseWithoutCors(
+      return new Response(
+        JSON.stringify({
+          error:
+            "Website này không được phép gọi API.",
+          receivedOrigin:
+            origin || "Không có Origin",
+        }),
         {
-          error: "Origin không được phép truy cập API.",
-          receivedOrigin: origin || "Không có Origin",
+          status: 403,
+          headers: {
+            "Content-Type":
+              "application/json; charset=utf-8",
+            "Cache-Control": "no-store",
+            Vary: "Origin",
+          },
         },
-        403,
       );
     }
 
-    /*
-     * KIỂM TRA API KEY
-     */
-    if (!env.GEMINI_API_KEY) {
+    // Kiểm tra NVIDIA API key.
+    if (!env.NVIDIA_API_KEY) {
       return jsonResponse(
         {
           error:
-            "Cloudflare Worker chưa được cấu hình GEMINI_API_KEY.",
+            "Worker chưa được cấu hình NVIDIA_API_KEY.",
         },
         500,
         origin,
       );
     }
 
-    /*
-     * KIỂM TRA CONTENT-TYPE
-     */
     const contentType =
-      request.headers.get("Content-Type") || "";
+      request.headers.get("Content-Type") ||
+      "";
 
-    if (!contentType.toLowerCase().includes("application/json")) {
+    if (
+      !contentType
+        .toLowerCase()
+        .includes("application/json")
+    ) {
       return jsonResponse(
         {
           error:
@@ -382,36 +164,35 @@ export default {
     }
 
     try {
-      /*
-       * ĐỌC JSON REQUEST
-       */
-      let body;
+      let requestBody;
 
       try {
-        body = await request.json();
+        requestBody =
+          await request.json();
       } catch {
         return jsonResponse(
           {
-            error: "Dữ liệu gửi lên không phải JSON hợp lệ.",
+            error:
+              "Dữ liệu gửi lên không phải JSON hợp lệ.",
           },
           400,
           origin,
         );
       }
 
-      const studentAnswer = normalizeText(
-        body?.studentAnswer,
-      );
+      const studentAnswer =
+        normalizeText(
+          requestBody?.studentAnswer,
+        );
 
-      const wordCount = countWords(studentAnswer);
+      const wordCount =
+        countWords(studentAnswer);
 
-      /*
-       * KIỂM TRA BÀI LÀM
-       */
       if (!studentAnswer) {
         return jsonResponse(
           {
-            error: "Bài làm đang để trống.",
+            error:
+              "Bạn chưa nhập nội dung bài làm.",
           },
           400,
           origin,
@@ -422,8 +203,8 @@ export default {
         return jsonResponse(
           {
             error:
-              `Bài làm cần tối thiểu ${MIN_WORDS} chữ; ` +
-              `hiện có ${wordCount} chữ.`,
+              `Bài làm cần tối thiểu ${MIN_WORDS} chữ. ` +
+              `Hiện tại bài có ${wordCount} chữ.`,
             wordCount,
             minimumWords: MIN_WORDS,
           },
@@ -432,11 +213,15 @@ export default {
         );
       }
 
-      if (studentAnswer.length > MAX_CHARS) {
+      if (
+        studentAnswer.length >
+        MAX_CHARS
+      ) {
         return jsonResponse(
           {
             error:
-              `Bài làm vượt quá ${MAX_CHARS.toLocaleString(
+              `Bài làm không được vượt quá ` +
+              `${MAX_CHARS.toLocaleString(
                 "vi-VN",
               )} ký tự.`,
           },
@@ -445,64 +230,73 @@ export default {
         );
       }
 
-      /*
-       * GỌI GEMINI
-       */
       const model =
-        normalizeModelName(env.GEMINI_MODEL) ||
-        "gemini-2.5-flash";
+        String(
+          env.NVIDIA_MODEL ||
+            DEFAULT_MODEL,
+        ).trim();
 
-      const geminiResult = await callGemini({
-        apiKey: env.GEMINI_API_KEY,
-        model,
-        studentAnswer,
-        wordCount,
-      });
+      const aiText =
+        await callNvidia({
+          apiKey:
+            env.NVIDIA_API_KEY,
+          model,
+          studentAnswer,
+          wordCount,
+        });
 
-      /*
-       * KIỂM TRA JSON GEMINI
-       */
-      let parsedResult;
+      let parsed;
 
       try {
-        parsedResult = JSON.parse(geminiResult);
+        parsed =
+          JSON.parse(aiText);
       } catch (error) {
         console.error(
-          "Gemini trả JSON không hợp lệ:",
-          geminiResult,
+          "JSON parse error:",
+          error,
+        );
+
+        console.error(
+          "NVIDIA raw response:",
+          aiText,
         );
 
         return jsonResponse(
           {
             error:
-              "Gemini trả về dữ liệu không đúng định dạng JSON.",
+              "AI trả về kết quả không đúng định dạng JSON. " +
+              "Vui lòng thử nộp lại bài.",
           },
           502,
           origin,
         );
       }
 
-      /*
-       * LÀM SẠCH VÀ TÍNH LẠI TỔNG ĐIỂM
-       */
-      const sanitizedResult = sanitizeResult(
-        parsedResult,
-        wordCount,
-      );
+      const result =
+        sanitizeResult(
+          parsed,
+          wordCount,
+        );
 
       return jsonResponse(
-        sanitizedResult,
+        result,
         200,
         origin,
       );
     } catch (error) {
-      console.error("Worker error:", error);
+      console.error(
+        "Worker error:",
+        error,
+      );
 
-      if (error?.name === "AbortError") {
+      if (
+        error?.name ===
+        "AbortError"
+      ) {
         return jsonResponse(
           {
             error:
-              "Gemini xử lý quá lâu. Vui lòng thử lại.",
+              "NVIDIA xử lý quá lâu. Vui lòng thử lại.",
           },
           504,
           origin,
@@ -514,7 +308,7 @@ export default {
           error:
             error instanceof Error
               ? error.message
-              : "Không thể xử lý yêu cầu chấm bài.",
+              : "Không thể chấm bài.",
         },
         500,
         origin,
@@ -524,596 +318,859 @@ export default {
 };
 
 /**
- * Gọi Gemini API.
+ * Gọi NVIDIA NIM API.
  */
-async function callGemini({
+async function callNvidia({
   apiKey,
   model,
   studentAnswer,
   wordCount,
 }) {
-  const controller = new AbortController();
+  const controller =
+    new AbortController();
 
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, GEMINI_TIMEOUT_MS);
-
-  const apiUrl =
-    `https://generativelanguage.googleapis.com/` +
-    `v1beta/models/${encodeURIComponent(model)}` +
-    `:generateContent`;
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    TIMEOUT_MS,
+  );
 
   try {
-    const response = await fetch(apiUrl, {
-      method: "POST",
+    const response = await fetch(
+      NVIDIA_API_URL,
+      {
+        method: "POST",
 
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
+        headers: {
+          "Content-Type":
+            "application/json",
 
-      signal: controller.signal,
+          Accept:
+            "application/json",
 
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [
-            {
-              text: buildSystemPrompt(),
-            },
-          ],
+          Authorization:
+            `Bearer ${apiKey}`,
         },
 
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: buildUserPrompt(
+        signal:
+          controller.signal,
+
+        body: JSON.stringify({
+          model,
+
+          messages: [
+            {
+              role: "system",
+              content:
+                buildSystemPrompt(),
+            },
+
+            {
+              role: "user",
+              content:
+                buildUserPrompt(
                   studentAnswer,
                   wordCount,
                 ),
-              },
-            ],
-          },
-        ],
+            },
+          ],
 
-        generationConfig: {
           temperature: 0.15,
-          topP: 0.85,
-          maxOutputTokens: 8192,
-          responseMimeType: "application/json",
-          responseJsonSchema: JSON_SCHEMA,
-        },
-      }),
-    });
+          top_p: 0.85,
+          max_tokens: 7000,
+          stream: false,
+        }),
+      },
+    );
 
-    const rawText = await response.text();
+    const responseText =
+      await response.text();
 
-    let rawData;
+    let data;
 
     try {
-      rawData = JSON.parse(rawText);
+      data =
+        JSON.parse(responseText);
     } catch {
-      rawData = {
-        rawText,
+      data = {
+        rawText:
+          responseText,
       };
     }
 
     if (!response.ok) {
       console.error(
-        "Gemini API error:",
+        "NVIDIA API error:",
         response.status,
-        rawData,
+        data,
       );
 
-      const message =
-        rawData?.error?.message ||
-        `Gemini API trả về lỗi ${response.status}.`;
+      const apiMessage =
+        data?.error?.message ||
+        data?.detail ||
+        data?.message ||
+        data?.rawText ||
+        `NVIDIA API lỗi ${response.status}`;
 
-      if (response.status === 429) {
+      if (
+        response.status === 400
+      ) {
         throw new Error(
-          "Gemini đã vượt giới hạn sử dụng. " +
-            "Vui lòng chờ một lúc rồi thử lại.",
+          `NVIDIA không chấp nhận yêu cầu: ${apiMessage}`,
         );
       }
 
       if (
-        response.status === 401 ||
+        response.status === 401
+      ) {
+        throw new Error(
+          "NVIDIA API key không hợp lệ hoặc đã hết hiệu lực.",
+        );
+      }
+
+      if (
         response.status === 403
       ) {
         throw new Error(
-          "Gemini API key không hợp lệ hoặc chưa được cấp quyền.",
+          "API key không có quyền sử dụng model NVIDIA này.",
         );
       }
 
-      if (response.status === 404) {
+      if (
+        response.status === 404
+      ) {
         throw new Error(
           `Không tìm thấy model "${model}". ` +
-            "Hãy kiểm tra GEMINI_MODEL trong wrangler.toml.",
+            "Hãy kiểm tra NVIDIA_MODEL trong wrangler.toml.",
         );
       }
 
-      throw new Error(message);
-    }
-
-    const finishReason =
-      rawData?.candidates?.[0]?.finishReason || "";
-
-    if (
-      finishReason &&
-      !["STOP", "MAX_TOKENS"].includes(finishReason)
-    ) {
-      console.warn(
-        "Gemini finish reason:",
-        finishReason,
-      );
-    }
-
-    const responseText =
-      rawData?.candidates?.[0]?.content?.parts
-        ?.map((part) => part?.text || "")
-        .join("")
-        .trim() || "";
-
-    if (!responseText) {
-      const blockReason =
-        rawData?.promptFeedback?.blockReason;
-
-      if (blockReason) {
+      if (
+        response.status === 429
+      ) {
         throw new Error(
-          `Gemini từ chối xử lý nội dung: ${blockReason}.`,
+          "NVIDIA API đã vượt giới hạn miễn phí. " +
+            "Vui lòng chờ rồi thử lại.",
+        );
+      }
+
+      if (
+        response.status >= 500
+      ) {
+        throw new Error(
+          "Máy chủ NVIDIA đang bận hoặc tạm thời gặp lỗi.",
         );
       }
 
       throw new Error(
-        "Gemini không trả về nội dung chấm bài.",
+        String(apiMessage),
       );
     }
 
-    return removeMarkdownCodeFence(responseText);
+    const content =
+      data?.choices?.[0]
+        ?.message?.content;
+
+    let generatedText = "";
+
+    if (
+      typeof content ===
+      "string"
+    ) {
+      generatedText =
+        content.trim();
+    } else if (
+      Array.isArray(content)
+    ) {
+      generatedText =
+        content
+          .map((part) => {
+            if (
+              typeof part ===
+              "string"
+            ) {
+              return part;
+            }
+
+            return (
+              part?.text ||
+              part?.content ||
+              ""
+            );
+          })
+          .join("")
+          .trim();
+    }
+
+    if (!generatedText) {
+      console.error(
+        "NVIDIA response:",
+        data,
+      );
+
+      throw new Error(
+        "NVIDIA không trả về nội dung chấm bài.",
+      );
+    }
+
+    return extractJson(
+      generatedText,
+    );
   } finally {
     clearTimeout(timeoutId);
   }
 }
 
 /**
- * Prompt hệ thống quy định cách chấm.
+ * Prompt quy định cách AI chấm.
  */
 function buildSystemPrompt() {
-  const rubricText = CRITERIA.map(
-    (criterion, index) =>
-      `${index + 1}. ${criterion.name}: ` +
-      `${criterion.maxScore} điểm`,
-  ).join("\n");
+  const rubricText =
+    RUBRIC.map(
+      (item, index) =>
+        `${index + 1}. ` +
+        `${item.name}: ` +
+        `${item.maxScore} điểm`,
+    ).join("\n");
 
   return `
-Bạn là giảng viên chấm bài nghị luận xã hội và giáo viên hướng dẫn học sinh sửa bài.
+Bạn là giáo viên chấm bài nghị luận xã hội bằng tiếng Việt.
 
-MỤC TIÊU:
-- Chấm bài khách quan theo khung lập luận đã quy định.
-- Chỉ ra lỗi cụ thể trong bài.
-- Sửa trực tiếp lỗi diễn đạt, chính tả, ngữ pháp và lập luận.
-- Đề xuất ý còn thiếu để học sinh tự bổ sung.
-- Không viết nhận xét chung chung.
-- Không tự bịa nội dung học sinh chưa viết.
+Nhiệm vụ của bạn:
+- Chấm bài khách quan.
+- Phát hiện lỗi cụ thể.
+- Sửa từng lỗi.
+- Bổ sung ý học sinh còn thiếu.
+- Hướng dẫn học sinh nâng điểm.
+- Không nhận xét chung chung.
+- Không bịa nội dung không có trong bài.
 
-KHUNG BÀI NGHỊ LUẬN CẦN ĐÁNH GIÁ:
+KHUNG BÀI CẦN ĐÁNH GIÁ:
 
-1. MỞ BÀI TRỰC DIỆN
-- Có dẫn dắt phù hợp.
-- Nêu đúng vấn đề nghị luận.
-- Khẳng định ý nghĩa hoặc tầm quan trọng của vấn đề.
-- Không mở bài quá dài hoặc xa chủ đề.
+1. MỞ BÀI
+- Dẫn dắt đúng chủ đề.
+- Nêu vấn đề nghị luận.
+- Khẳng định ý nghĩa của vấn đề.
+- Không lan man.
 
-2. GIẢI THÍCH BẢN CHẤT
-- Giải thích từ khóa hoặc khái niệm trung tâm.
-- Làm rõ nội hàm của vấn đề.
-- Trình bày ngắn gọn, rõ ràng.
+2. GIẢI THÍCH
+- Giải thích khái niệm trung tâm.
+- Làm rõ bản chất vấn đề.
 - Không chỉ lặp lại đề bài.
 
 3. PHÂN TÍCH VÀ CHỨNG MINH
-- Phân tích biểu hiện, nguyên nhân, vai trò, ý nghĩa hoặc hậu quả.
-- Các luận điểm phải logic và liên kết.
-- Mỗi nhận định quan trọng cần có lý lẽ hoặc dẫn chứng.
-- Dẫn chứng phải phù hợp và có liên hệ với luận điểm.
-- Không được tự tạo sự kiện, con số, nhân vật hoặc trích dẫn không có căn cứ.
+- Phân tích biểu hiện.
+- Phân tích nguyên nhân.
+- Phân tích vai trò, ý nghĩa hoặc hậu quả.
+- Có lập luận logic.
+- Có dẫn chứng phù hợp.
+- Dẫn chứng phải gắn với luận điểm.
 
 4. PHẢN ĐỀ VÀ MỞ RỘNG
-- Xem xét mặt trái hoặc quan điểm đối lập.
-- Phê phán hành vi lệch lạc, thờ ơ hoặc cực đoan khi phù hợp.
-- Phân biệt đúng bản chất vấn đề.
-- Tránh lập luận một chiều.
+- Nhìn nhận mặt trái.
+- Phê phán biểu hiện sai lệch khi phù hợp.
+- Không lập luận một chiều.
+- Không cực đoan.
 
 5. LIÊN HỆ VÀ KẾT BÀI
 - Rút ra bài học nhận thức.
-- Nêu hành động cụ thể của bản thân.
-- Khi phù hợp, liên hệ trách nhiệm của thế hệ trẻ hoặc người chiến sĩ Công an tương lai.
-- Kết bài phải khẳng định lại vấn đề và thể hiện quyết tâm.
+- Đề xuất hành động cụ thể.
+- Có thể liên hệ trách nhiệm của thế hệ trẻ hoặc người chiến sĩ Công an tương lai khi phù hợp.
+- Kết bài khẳng định lại vấn đề.
 
-NGUYÊN TẮC CHẤM:
-- Chỉ chấm nội dung thực sự xuất hiện trong bài.
-- Không suy diễn tư tưởng, nhân cách, phẩm chất hoặc lòng trung thành của học sinh.
-- Không yêu cầu học sinh phải dùng câu chữ khẩu hiệu.
-- Ưu tiên lập luận có căn cứ, phù hợp pháp luật, có trách nhiệm xã hội và không cực đoan.
-- Không cộng điểm vì bài chỉ nhắc đến lực lượng Công an mà không có phân tích.
-- Không trừ điểm chỉ vì học sinh dùng dẫn chứng phổ thông nếu dẫn chứng đó hợp lý.
-- Phải chỉ rõ vì sao cộng hoặc trừ điểm.
-- Điểm có thể cao nếu bài thực sự tốt.
-- Không cố tình giữ điểm ở mức trung bình.
+NGUYÊN TẮC:
+- Chỉ chấm những gì thực sự có trong bài.
+- Không suy diễn phẩm chất hoặc tư tưởng của học sinh.
+- Không tự bịa sự kiện, số liệu hoặc nhân vật.
+- Không cộng điểm chỉ vì bài nhắc đến lực lượng Công an.
+- Không trừ điểm vì dẫn chứng phổ thông nếu dẫn chứng hợp lý.
+- Điểm phải phản ánh đúng chất lượng bài.
 
-RUBRIC CỐ ĐỊNH, TỔNG 10 ĐIỂM:
+RUBRIC TỔNG 10 ĐIỂM:
+
 ${rubricText}
 
-CÁCH XẾP LOẠI:
+XẾP LOẠI:
 - Dưới 5,0: Chưa đạt
-- Từ 5,0 đến dưới 6,5: Trung bình
-- Từ 6,5 đến dưới 8,0: Khá
-- Từ 8,0 đến dưới 9,0: Giỏi
-- Từ 9,0 đến 10: Xuất sắc
+- 5,0 đến dưới 6,5: Trung bình
+- 6,5 đến dưới 8,0: Khá
+- 8,0 đến dưới 9,0: Giỏi
+- 9,0 đến 10: Xuất sắc
 
-YÊU CẦU CHO criteria:
-- Phải có đúng 7 tiêu chí.
-- Phải theo đúng thứ tự trong rubric.
-- Tên tiêu chí phải giữ nguyên.
-- Điểm không được vượt quá điểm tối đa.
-- evidence phải là một đoạn ngắn có thật trong bài.
-- Nếu bài không có dẫn chứng phù hợp thì evidence là chuỗi rỗng.
-- nextStep phải hướng dẫn cụ thể cách nâng điểm.
+YÊU CẦU PHÁT HIỆN LỖI:
+- Tối đa 12 lỗi quan trọng nhất.
+- original phải chép đúng câu hoặc cụm từ của học sinh.
+- correction là câu đã sửa hoàn chỉnh.
+- explanation giải thích cụ thể.
+- Kiểm tra chính tả, dùng từ, ngữ pháp, câu dài, câu tối nghĩa, lặp ý, liên kết, lập luận và dẫn chứng.
 
-YÊU CẦU CHO paragraphFeedback:
-Đánh giá lần lượt:
-1. Mở bài
-2. Giải thích
-3. Phân tích & chứng minh
-4. Phản đề & mở rộng
-5. Liên hệ & kết bài
-
-Có thể thêm mục thứ 6 là "Bố cục toàn bài".
-
-Giá trị status:
-- good: đạt tốt
-- warning: có nhưng chưa đầy đủ
-- bad: thiếu hoặc có lỗi nghiêm trọng
-
-YÊU CẦU PHÁT HIỆN VÀ SỬA LỖI:
-- Chỉ ra tối đa 12 lỗi đáng sửa nhất.
-- Không bịa lỗi.
-- original phải chép đúng cụm từ hoặc câu trong bài.
-- correction phải đưa ra bản sửa hoàn chỉnh.
-- explanation phải giải thích lỗi cụ thể.
-- Có thể phát hiện:
-  + chính tả;
-  + dùng từ;
-  + ngữ pháp;
-  + câu quá dài;
-  + câu tối nghĩa;
-  + lặp từ;
-  + lặp ý;
-  + chuyển đoạn yếu;
-  + mâu thuẫn trong lập luận;
-  + dẫn chứng không gắn với luận điểm;
-  + khẳng định thiếu căn cứ.
-
-YÊU CẦU BỔ SUNG Ý:
+YÊU CẦU THÊM Ý:
 - Đề xuất từ 2 đến 6 ý.
-- Các ý phải sát với chủ đề học sinh đang viết.
-- Không bịa số liệu, sự kiện hoặc nhân vật.
-- insertionPoint phải nói rõ nên thêm ở phần nào.
-- sampleSentence chỉ là câu gợi ý để học sinh tự phát triển.
-- Không viết thay toàn bộ bài.
+- Nêu vị trí nên chèn.
+- Giải thích tác dụng.
+- Viết một câu mẫu.
+- Không bịa thông tin thực tế.
 
-YÊU CẦU DÀN Ý:
-- improvedOutline có từ 5 đến 8 ý.
-- Dàn ý phải bám sát bài hiện tại.
-- Tập trung sửa những phần còn yếu hoặc bị thiếu.
-
-YÊU CẦU revisedPassage:
-- Chỉ viết lại từ 1 đến 3 đoạn yếu nhất.
+YÊU CẦU VIẾT LẠI:
+- Chỉ viết lại 1 đến 3 đoạn yếu nhất.
 - Dài khoảng 180 đến 300 chữ.
-- Giữ chủ đề và quan điểm chính của học sinh.
-- Làm rõ lập luận, sửa lỗi và thêm ý cần thiết.
 - Không viết lại toàn bộ bài.
-- Không đưa thông tin thực tế chưa được kiểm chứng.
+- Giữ quan điểm chính của học sinh.
 
-Chỉ trả về JSON hợp lệ theo schema.
-Không dùng Markdown.
-Không đặt JSON trong dấu ba dấu nháy.
+CHỈ TRẢ VỀ MỘT ĐỐI TƯỢNG JSON HỢP LỆ.
+
+KHÔNG dùng Markdown.
+KHÔNG dùng dấu ba dấu nháy.
+KHÔNG thêm lời giới thiệu.
+KHÔNG thêm nội dung trước hoặc sau JSON.
+
+CẤU TRÚC JSON BẮT BUỘC:
+
+{
+  "totalScore": 0,
+  "wordCount": 0,
+  "level": "",
+  "overallComment": "",
+  "criteria": [
+    {
+      "name": "",
+      "score": 0,
+      "maxScore": 0,
+      "comment": "",
+      "evidence": "",
+      "nextStep": ""
+    }
+  ],
+  "strengths": [""],
+  "weaknesses": [""],
+  "paragraphFeedback": [
+    {
+      "section": "",
+      "status": "good",
+      "statusLabel": "",
+      "comment": "",
+      "suggestion": ""
+    }
+  ],
+  "errors": [
+    {
+      "type": "",
+      "original": "",
+      "correction": "",
+      "explanation": ""
+    }
+  ],
+  "addedIdeas": [
+    {
+      "idea": "",
+      "why": "",
+      "insertionPoint": "",
+      "sampleSentence": ""
+    }
+  ],
+  "improvedOutline": [""],
+  "revisedPassage": ""
+}
 `.trim();
 }
 
 /**
- * Prompt chứa bài làm.
+ * Prompt chứa bài làm của học sinh.
  */
 function buildUserPrompt(
   studentAnswer,
   wordCount,
 ) {
   return `
-Hãy chấm và sửa bài nghị luận xã hội sau đây.
+Hãy chấm, phát hiện lỗi và hướng dẫn sửa bài nghị luận dưới đây.
 
-SỐ CHỮ DO HỆ THỐNG ĐẾM:
-${wordCount} chữ
+SỐ CHỮ HỆ THỐNG ĐẾM:
+${wordCount}
 
 BÀI LÀM:
 --------------------
 ${studentAnswer}
 --------------------
 
-NHIỆM VỤ BẮT BUỘC:
+Hãy thực hiện đầy đủ:
 
-1. Xác định vấn đề trung tâm mà học sinh đang nghị luận.
+1. Xác định chủ đề trung tâm.
 
-2. Chấm đủ 7 tiêu chí theo rubric cố định.
+2. Chấm đúng 7 tiêu chí.
 
-3. Trích dẫn bằng chứng ngắn từ bài cho từng tiêu chí khi có.
+3. Mỗi tiêu chí cần có:
+- điểm;
+- nhận xét;
+- bằng chứng ngắn từ bài;
+- hướng nâng điểm.
 
-4. Chỉ ra những phần còn thiếu hoặc còn nông theo khung:
-- Mở bài
-- Giải thích
-- Phân tích và chứng minh
-- Phản đề và mở rộng
-- Liên hệ và kết bài
+4. Đánh giá:
+- mở bài;
+- giải thích;
+- phân tích và chứng minh;
+- phản đề;
+- liên hệ và kết bài.
 
-5. Phát hiện lỗi:
+5. Chỉ ra lỗi:
 - chính tả;
 - dùng từ;
 - ngữ pháp;
 - câu dài;
-- câu tối nghĩa;
+- câu khó hiểu;
+- lặp từ;
 - lặp ý;
 - liên kết;
 - lập luận;
 - dẫn chứng.
 
 6. Với mỗi lỗi:
-- chép đúng câu hoặc cụm từ gốc;
-- đưa cách sửa;
-- giải thích vì sao cần sửa.
+- chép đúng câu gốc;
+- viết câu sửa;
+- giải thích lý do.
 
-7. Đề xuất ý còn thiếu:
-- nêu ý cần thêm;
-- giải thích tác dụng;
-- chỉ rõ vị trí nên thêm;
-- cung cấp một câu mẫu.
+7. Đề xuất các ý còn thiếu:
+- ý cần thêm;
+- vì sao cần thêm;
+- vị trí chèn;
+- câu mẫu.
 
-8. Tạo dàn ý nâng điểm dựa trên chính bài hiện tại.
+8. Tạo dàn ý để nâng điểm.
 
-9. Viết lại từ 1 đến 3 đoạn yếu nhất để minh họa cách sửa.
+9. Viết lại từ 1 đến 3 đoạn yếu nhất.
 
-10. Không bịa chi tiết mà học sinh không viết.
+10. Không bịa thông tin.
 `.trim();
 }
 
 /**
- * Chuẩn hóa kết quả.
- * Worker tự tính lại tổng điểm thay vì tin totalScore từ AI.
+ * Chuẩn hóa kết quả trước khi trả frontend.
  */
-function sanitizeResult(result, wordCount) {
-  const receivedCriteria = Array.isArray(
-    result?.criteria,
-  )
-    ? result.criteria
-    : [];
+function sanitizeResult(
+  result,
+  wordCount,
+) {
+  const receivedCriteria =
+    Array.isArray(
+      result?.criteria,
+    )
+      ? result.criteria
+      : [];
 
-  const criteria = CRITERIA.map(
-    (expected, index) => {
-      const received =
-        receivedCriteria[index] || {};
+  const criteria =
+    RUBRIC.map(
+      (expected, index) => {
+        const received =
+          receivedCriteria[index] ||
+          {};
 
-      return {
-        name: expected.name,
+        return {
+          name:
+            expected.name,
 
-        score: roundToTenth(
-          clamp(
-            Number(received.score),
-            0,
+          score:
+            roundOneDecimal(
+              clamp(
+                Number(
+                  received.score,
+                ),
+                0,
+                expected.maxScore,
+              ),
+            ),
+
+          maxScore:
             expected.maxScore,
-          ),
-        ),
 
-        maxScore: expected.maxScore,
+          comment:
+            limitText(
+              received.comment ||
+                "Chưa có nhận xét.",
+              1800,
+            ),
 
-        comment: limitString(
-          received.comment ||
-            "Chưa có nhận xét.",
-          1800,
-        ),
+          evidence:
+            limitText(
+              received.evidence ||
+                "",
+              600,
+            ),
 
-        evidence: limitString(
-          received.evidence || "",
-          500,
-        ),
+          nextStep:
+            limitText(
+              received.nextStep ||
+                "",
+              1200,
+            ),
+        };
+      },
+    );
 
-        nextStep: limitString(
-          received.nextStep || "",
-          1200,
-        ),
-      };
-    },
-  );
-
-  const totalScore = roundToTenth(
-    criteria.reduce(
-      (sum, criterion) =>
-        sum + criterion.score,
-      0,
-    ),
-  );
+  const totalScore =
+    roundOneDecimal(
+      criteria.reduce(
+        (sum, item) =>
+          sum + item.score,
+        0,
+      ),
+    );
 
   return {
     totalScore,
     wordCount,
-    level: levelFromScore(totalScore),
+    level:
+      getLevel(totalScore),
 
-    overallComment: limitString(
-      result?.overallComment ||
-        "AI chưa cung cấp nhận xét tổng quát.",
-      2500,
-    ),
+    overallComment:
+      limitText(
+        result?.overallComment ||
+          "Chưa có nhận xét tổng quát.",
+        2500,
+      ),
 
     criteria,
 
-    strengths: sanitizeStringArray(
-      result?.strengths,
-      8,
-    ),
+    strengths:
+      sanitizeStringArray(
+        result?.strengths,
+        8,
+      ),
 
-    weaknesses: sanitizeStringArray(
-      result?.weaknesses,
-      8,
-    ),
+    weaknesses:
+      sanitizeStringArray(
+        result?.weaknesses,
+        8,
+      ),
 
     paragraphFeedback:
       sanitizeParagraphFeedback(
         result?.paragraphFeedback,
       ),
 
-    errors: sanitizeErrors(result?.errors),
+    errors:
+      sanitizeErrors(
+        result?.errors,
+      ),
 
-    addedIdeas: sanitizeAddedIdeas(
-      result?.addedIdeas,
-    ),
+    addedIdeas:
+      sanitizeAddedIdeas(
+        result?.addedIdeas,
+      ),
 
-    improvedOutline: sanitizeStringArray(
-      result?.improvedOutline,
-      8,
-    ),
+    improvedOutline:
+      sanitizeStringArray(
+        result?.improvedOutline,
+        8,
+      ),
 
-    revisedPassage: limitString(
-      result?.revisedPassage || "",
-      7000,
-    ),
+    revisedPassage:
+      limitText(
+        result?.revisedPassage ||
+          "",
+        7000,
+      ),
   };
 }
 
-function sanitizeParagraphFeedback(value) {
+function sanitizeParagraphFeedback(
+  value,
+) {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  return value.slice(0, 6).map((item) => {
-    const allowedStatuses = [
-      "good",
-      "warning",
-      "bad",
-    ];
+  return value
+    .slice(0, 6)
+    .map((item) => {
+      const allowed = [
+        "good",
+        "warning",
+        "bad",
+      ];
 
-    const status = allowedStatuses.includes(
-      item?.status,
-    )
-      ? item.status
-      : "warning";
+      const status =
+        allowed.includes(
+          item?.status,
+        )
+          ? item.status
+          : "warning";
 
-    return {
-      section: limitString(
-        item?.section || "Phần bài viết",
-        150,
-      ),
+      return {
+        section:
+          limitText(
+            item?.section ||
+              "Phần bài viết",
+            150,
+          ),
 
-      status,
+        status,
 
-      statusLabel: limitString(
-        item?.statusLabel ||
-          statusLabelFromStatus(status),
-        100,
-      ),
+        statusLabel:
+          limitText(
+            item?.statusLabel ||
+              getStatusLabel(
+                status,
+              ),
+            100,
+          ),
 
-      comment: limitString(
-        item?.comment || "",
-        1500,
-      ),
+        comment:
+          limitText(
+            item?.comment ||
+              "",
+            1500,
+          ),
 
-      suggestion: limitString(
-        item?.suggestion || "",
-        1500,
-      ),
-    };
-  });
+        suggestion:
+          limitText(
+            item?.suggestion ||
+              "",
+            1500,
+          ),
+      };
+    });
 }
 
-function sanitizeErrors(value) {
+function sanitizeErrors(
+  value,
+) {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  return value.slice(0, 12).map((item) => ({
-    type: limitString(
-      item?.type || "Diễn đạt",
-      120,
-    ),
+  return value
+    .slice(0, 12)
+    .map((item) => ({
+      type:
+        limitText(
+          item?.type ||
+            "Diễn đạt",
+          120,
+        ),
 
-    original: limitString(
-      item?.original || "",
-      800,
-    ),
+      original:
+        limitText(
+          item?.original ||
+            "",
+          1000,
+        ),
 
-    correction: limitString(
-      item?.correction || "",
-      1200,
-    ),
+      correction:
+        limitText(
+          item?.correction ||
+            "",
+          1500,
+        ),
 
-    explanation: limitString(
-      item?.explanation || "",
-      1200,
-    ),
-  }));
+      explanation:
+        limitText(
+          item?.explanation ||
+            "",
+          1500,
+        ),
+    }));
 }
 
-function sanitizeAddedIdeas(value) {
+function sanitizeAddedIdeas(
+  value,
+) {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  return value.slice(0, 6).map((item) => ({
-    idea: limitString(
-      item?.idea || "",
-      800,
-    ),
+  return value
+    .slice(0, 6)
+    .map((item) => ({
+      idea:
+        limitText(
+          item?.idea || "",
+          1000,
+        ),
 
-    why: limitString(
-      item?.why || "",
-      1200,
-    ),
+      why:
+        limitText(
+          item?.why || "",
+          1500,
+        ),
 
-    insertionPoint: limitString(
-      item?.insertionPoint || "",
-      500,
-    ),
+      insertionPoint:
+        limitText(
+          item?.insertionPoint ||
+            "",
+          700,
+        ),
 
-    sampleSentence: limitString(
-      item?.sampleSentence || "",
-      1600,
-    ),
-  }));
+      sampleSentence:
+        limitText(
+          item?.sampleSentence ||
+            "",
+          1800,
+        ),
+    }));
 }
 
 /**
- * CORS
+ * Tách JSON khỏi câu trả lời AI.
  */
-function isOriginAllowed(origin) {
-  return ALLOWED_ORIGINS.includes(origin);
+function extractJson(text) {
+  let cleaned =
+    String(text || "")
+      .replace(
+        /^```(?:json)?\s*/i,
+        "",
+      )
+      .replace(
+        /\s*```$/i,
+        "",
+      )
+      .trim();
+
+  try {
+    JSON.parse(cleaned);
+    return cleaned;
+  } catch {
+    // Tiếp tục tìm JSON.
+  }
+
+  const start =
+    cleaned.indexOf("{");
+
+  if (start === -1) {
+    throw new Error(
+      "AI không trả về JSON.",
+    );
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (
+    let index = start;
+    index < cleaned.length;
+    index += 1
+  ) {
+    const character =
+      cleaned[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (
+      character === "\\" &&
+      inString
+    ) {
+      escaped = true;
+      continue;
+    }
+
+    if (
+      character === '"'
+    ) {
+      inString =
+        !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (
+      character === "{"
+    ) {
+      depth += 1;
+    }
+
+    if (
+      character === "}"
+    ) {
+      depth -= 1;
+    }
+
+    if (depth === 0) {
+      const candidate =
+        cleaned.slice(
+          start,
+          index + 1,
+        );
+
+      try {
+        JSON.parse(
+          candidate,
+        );
+
+        return candidate;
+      } catch {
+        break;
+      }
+    }
+  }
+
+  throw new Error(
+    "AI trả kết quả JSON không hợp lệ.",
+  );
 }
 
-function createCorsHeaders(origin, request) {
+/**
+ * CORS.
+ */
+function handleOptions(
+  request,
+  origin,
+) {
+  if (
+    !isOriginAllowed(origin)
+  ) {
+    return new Response(
+      null,
+      {
+        status: 403,
+        headers: {
+          "Cache-Control":
+            "no-store",
+          Vary: "Origin",
+        },
+      },
+    );
+  }
+
   const requestedHeaders =
-    request?.headers?.get(
+    request.headers.get(
       "Access-Control-Request-Headers",
     ) || "Content-Type";
 
-  return {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods":
-      "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers":
-      requestedHeaders,
-    "Access-Control-Max-Age": "86400",
-    "Vary": "Origin",
-  };
+  return new Response(
+    null,
+    {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin":
+          origin,
+
+        "Access-Control-Allow-Methods":
+          "GET, POST, OPTIONS",
+
+        "Access-Control-Allow-Headers":
+          requestedHeaders,
+
+        "Access-Control-Max-Age":
+          "86400",
+
+        Vary: "Origin",
+      },
+    },
+  );
 }
 
-/**
- * JSON response có CORS.
- */
+function isOriginAllowed(
+  origin,
+) {
+  return ALLOWED_ORIGINS.includes(
+    origin,
+  );
+}
+
 function jsonResponse(
   data,
   status,
@@ -1126,19 +1183,28 @@ function jsonResponse(
     "Cache-Control":
       "no-store, no-cache, must-revalidate",
 
-    "X-Content-Type-Options": "nosniff",
+    "X-Content-Type-Options":
+      "nosniff",
 
-    "Vary": "Origin",
+    Vary:
+      "Origin",
   };
 
-  if (isOriginAllowed(origin)) {
-    headers["Access-Control-Allow-Origin"] =
-      origin;
+  if (
+    isOriginAllowed(origin)
+  ) {
+    headers[
+      "Access-Control-Allow-Origin"
+    ] = origin;
 
-    headers["Access-Control-Allow-Methods"] =
+    headers[
+      "Access-Control-Allow-Methods"
+    ] =
       "GET, POST, OPTIONS";
 
-    headers["Access-Control-Allow-Headers"] =
+    headers[
+      "Access-Control-Allow-Headers"
+    ] =
       "Content-Type";
   }
 
@@ -1152,47 +1218,26 @@ function jsonResponse(
 }
 
 /**
- * JSON response không có CORS.
- * Dùng khi origin bị từ chối.
+ * Hàm tiện ích.
  */
-function jsonResponseWithoutCors(
-  data,
-  status,
+function normalizeText(
+  value,
 ) {
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-
-      headers: {
-        "Content-Type":
-          "application/json; charset=utf-8",
-
-        "Cache-Control": "no-store",
-
-        "X-Content-Type-Options":
-          "nosniff",
-
-        "Vary": "Origin",
-      },
-    },
-  );
-}
-
-/**
- * Tiện ích.
- */
-function normalizeText(value) {
   return String(value || "")
     .replace(
       /[\u200B-\u200D\uFEFF]/g,
       "",
     )
-    .replace(/\r\n/g, "\n")
+    .replace(
+      /\r\n/g,
+      "\n",
+    )
     .trim();
 }
 
-function countWords(text) {
+function countWords(
+  text,
+) {
   if (!text) {
     return 0;
   }
@@ -1203,29 +1248,29 @@ function countWords(text) {
     .length;
 }
 
-function normalizeModelName(value) {
-  return String(value || "")
-    .replace(/^models\//, "")
-    .trim();
-}
-
 function sanitizeStringArray(
   value,
-  maxItems,
+  maximumItems,
 ) {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return value
-    .slice(0, maxItems)
+    .slice(
+      0,
+      maximumItems,
+    )
     .map((item) =>
-      limitString(item, 1200),
+      limitText(
+        item,
+        1200,
+      ),
     )
     .filter(Boolean);
 }
 
-function levelFromScore(score) {
+function getLevel(score) {
   if (score < 5) {
     return "Chưa đạt";
   }
@@ -1245,47 +1290,64 @@ function levelFromScore(score) {
   return "Xuất sắc";
 }
 
-function statusLabelFromStatus(status) {
-  switch (status) {
-    case "good":
-      return "Đạt tốt";
-
-    case "bad":
-      return "Cần sửa";
-
-    default:
-      return "Chưa đầy đủ";
+function getStatusLabel(
+  status,
+) {
+  if (
+    status === "good"
+  ) {
+    return "Đạt tốt";
   }
+
+  if (
+    status === "bad"
+  ) {
+    return "Cần sửa";
+  }
+
+  return "Chưa đầy đủ";
 }
 
-function clamp(value, min, max) {
-  if (!Number.isFinite(value)) {
-    return min;
+function clamp(
+  value,
+  minimum,
+  maximum,
+) {
+  if (
+    !Number.isFinite(value)
+  ) {
+    return minimum;
   }
 
   return Math.min(
-    max,
-    Math.max(min, value),
+    maximum,
+    Math.max(
+      minimum,
+      value,
+    ),
   );
 }
 
-function roundToTenth(value) {
+function roundOneDecimal(
+  value,
+) {
   return (
     Math.round(
-      (value + Number.EPSILON) * 10,
+      (value +
+        Number.EPSILON) *
+        10,
     ) / 10
   );
 }
 
-function limitString(value, maxLength) {
+function limitText(
+  value,
+  maximumLength,
+) {
   return String(value || "")
     .trim()
-    .slice(0, maxLength);
-}
-
-function removeMarkdownCodeFence(text) {
-  return String(text || "")
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
+    .slice(
+      0,
+      maximumLength,
+    );
 }
