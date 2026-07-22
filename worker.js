@@ -4,45 +4,24 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:5500",
 ];
 
-const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-
-const DEFAULT_MODELS = ["meta/llama-3.3-70b-instruct"];
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const DEFAULT_MODELS = ["google/gemma-4-31b-it:free"];
+const APP_REFERER = "https://huyhoang2001.github.io/quizz_example.github.io/";
+const APP_TITLE = "AI Chấm Bài Tự Luận VB2 Công An";
 
 const MIN_WORDS = 500;
 const MAX_CHARS = 30000;
-const MODEL_TIMEOUT_MS = 40000;
-const RETRIES_PER_MODEL = 1;
-const MAX_OUTPUT_TOKENS = 3200;
+const DEFAULT_MODEL_TIMEOUT_MS = 60000;
+const DEFAULT_MAX_OUTPUT_TOKENS = 3600;
 
 const RUBRIC = [
-  {
-    name: "Mở bài và xác định vấn đề",
-    maxScore: 1.0,
-  },
-  {
-    name: "Giải thích bản chất vấn đề",
-    maxScore: 1.0,
-  },
-  {
-    name: "Phân tích và lập luận",
-    maxScore: 2.5,
-  },
-  {
-    name: "Dẫn chứng và chứng minh",
-    maxScore: 1.5,
-  },
-  {
-    name: "Phản đề và mở rộng",
-    maxScore: 1.0,
-  },
-  {
-    name: "Liên hệ bản thân và trách nhiệm",
-    maxScore: 1.5,
-  },
-  {
-    name: "Diễn đạt, chính tả và liên kết",
-    maxScore: 1.5,
-  },
+  { name: "Mở bài và xác định vấn đề", maxScore: 1.0 },
+  { name: "Giải thích bản chất vấn đề", maxScore: 1.0 },
+  { name: "Phân tích và lập luận", maxScore: 2.5 },
+  { name: "Dẫn chứng và chứng minh", maxScore: 1.5 },
+  { name: "Phản đề và mở rộng", maxScore: 1.0 },
+  { name: "Liên hệ bản thân và trách nhiệm", maxScore: 1.5 },
+  { name: "Diễn đạt, chính tả và liên kết", maxScore: 1.5 },
 ];
 
 export default {
@@ -56,20 +35,18 @@ export default {
 
     if (url.pathname === "/health") {
       if (request.method !== "GET") {
-        return jsonResponse(
-          { ok: false, error: "Method not allowed" },
-          405,
-          origin,
-        );
+        return jsonResponse({ ok: false, error: "Method not allowed" }, 405, origin);
       }
 
       return jsonResponse(
         {
           ok: true,
           service: "essay-grader-api",
-          provider: "NVIDIA NIM",
-          nvidiaConfigured: Boolean(env.NVIDIA_API_KEY),
-          models: getNvidiaModels(env),
+          provider: "OpenRouter",
+          openrouterConfigured: Boolean(env.OPENROUTER_API_KEY),
+          models: getOpenRouterModels(env),
+          modelTimeoutMs: getModelTimeoutMs(env),
+          maxOutputTokens: getMaxOutputTokens(env),
           minimumWords: MIN_WORDS,
           timestamp: new Date().toISOString(),
         },
@@ -100,23 +77,18 @@ export default {
       );
     }
 
-    if (!env.NVIDIA_API_KEY) {
+    if (!env.OPENROUTER_API_KEY) {
       return jsonResponse(
-        {
-          error: "Cloudflare Worker chưa được cấu hình NVIDIA_API_KEY.",
-        },
+        { error: "Cloudflare Worker chưa được cấu hình OPENROUTER_API_KEY." },
         500,
         origin,
       );
     }
 
     const contentType = request.headers.get("Content-Type") || "";
-
     if (!contentType.toLowerCase().includes("application/json")) {
       return jsonResponse(
-        {
-          error: "Content-Type phải là application/json.",
-        },
+        { error: "Content-Type phải là application/json." },
         415,
         origin,
       );
@@ -124,14 +96,11 @@ export default {
 
     try {
       let body;
-
       try {
         body = await request.json();
       } catch {
         return jsonResponse(
-          {
-            error: "Dữ liệu gửi lên không phải JSON hợp lệ.",
-          },
+          { error: "Dữ liệu gửi lên không phải JSON hợp lệ." },
           400,
           origin,
         );
@@ -141,21 +110,13 @@ export default {
       const wordCount = countWords(studentAnswer);
 
       if (!studentAnswer) {
-        return jsonResponse(
-          {
-            error: "Bài làm đang để trống.",
-          },
-          400,
-          origin,
-        );
+        return jsonResponse({ error: "Bài làm đang để trống." }, 400, origin);
       }
 
       if (wordCount < MIN_WORDS) {
         return jsonResponse(
           {
-            error:
-              `Bài làm cần tối thiểu ${MIN_WORDS} chữ; ` +
-              `hiện có ${wordCount} chữ.`,
+            error: `Bài làm cần tối thiểu ${MIN_WORDS} chữ; hiện có ${wordCount} chữ.`,
             wordCount,
             minimumWords: MIN_WORDS,
           },
@@ -167,37 +128,32 @@ export default {
       if (studentAnswer.length > MAX_CHARS) {
         return jsonResponse(
           {
-            error: `Bài làm vượt quá ${MAX_CHARS.toLocaleString(
-              "vi-VN",
-            )} ký tự.`,
+            error: `Bài làm vượt quá ${MAX_CHARS.toLocaleString("vi-VN")} ký tự.`,
           },
           400,
           origin,
         );
       }
 
-      const models = getNvidiaModels(env);
+      const models = getOpenRouterModels(env);
+      const modelTimeoutMs = getModelTimeoutMs(env);
+      const maxOutputTokens = getMaxOutputTokens(env);
 
-      const aiResponse = await callNvidiaWithFallback({
-        apiKey: env.NVIDIA_API_KEY,
+      const aiResponse = await callOpenRouterWithFallback({
+        apiKey: env.OPENROUTER_API_KEY,
         models,
         studentAnswer,
         wordCount,
+        modelTimeoutMs,
+        maxOutputTokens,
       });
 
       let parsedResult;
-
       try {
         parsedResult = JSON.parse(aiResponse.text);
       } catch {
-        console.error("NVIDIA trả JSON không hợp lệ:", aiResponse.text);
-
         return jsonResponse(
-          {
-            error:
-              "AI trả về dữ liệu không đúng định dạng JSON. " +
-              "Vui lòng thử lại.",
-          },
+          { error: "AI trả về dữ liệu không đúng định dạng JSON. Vui lòng thử lại." },
           502,
           origin,
         );
@@ -208,15 +164,15 @@ export default {
       return jsonResponse(
         {
           ...sanitizedResult,
-          provider: "NVIDIA NIM",
+          provider: "OpenRouter",
           model: aiResponse.model,
+          requestedModel: aiResponse.requestedModel,
         },
         200,
         origin,
       );
     } catch (error) {
       console.error("Worker error:", error);
-
       return jsonResponse(
         {
           error:
@@ -231,8 +187,8 @@ export default {
   },
 };
 
-function getNvidiaModels(env) {
-  const configured = String(env.NVIDIA_MODELS || "")
+function getOpenRouterModels(env) {
+  const configured = String(env.OPENROUTER_MODELS || "")
     .split(",")
     .map((model) => model.trim())
     .filter(Boolean);
@@ -240,92 +196,88 @@ function getNvidiaModels(env) {
   return configured.length > 0 ? [...new Set(configured)] : DEFAULT_MODELS;
 }
 
-async function callNvidiaWithFallback({
+function getModelTimeoutMs(env) {
+  return clampInteger(
+    Number(env.OPENROUTER_MODEL_TIMEOUT_MS),
+    15000,
+    120000,
+    DEFAULT_MODEL_TIMEOUT_MS,
+  );
+}
+
+function getMaxOutputTokens(env) {
+  return clampInteger(
+    Number(env.OPENROUTER_MAX_OUTPUT_TOKENS),
+    1200,
+    6000,
+    DEFAULT_MAX_OUTPUT_TOKENS,
+  );
+}
+
+async function callOpenRouterWithFallback({
   apiKey,
   models,
   studentAnswer,
   wordCount,
+  modelTimeoutMs,
+  maxOutputTokens,
 }) {
   const failures = [];
 
-  for (const model of models) {
-    for (let attempt = 1; attempt <= RETRIES_PER_MODEL; attempt += 1) {
-      try {
-        console.log(
-          `Calling NVIDIA model ${model}, attempt ${attempt}/${RETRIES_PER_MODEL}`,
-        );
+  for (let index = 0; index < models.length; index += 1) {
+    const requestedModel = models[index];
 
-        const text = await callSingleNvidiaModel({
-          apiKey,
-          model,
-          studentAnswer,
-          wordCount,
-        });
+    try {
+      console.log(
+        `Calling OpenRouter model ${requestedModel} (${index + 1}/${models.length})`,
+      );
 
-        console.log(`NVIDIA model succeeded: ${model}`);
+      const response = await callSingleOpenRouterModel({
+        apiKey,
+        model: requestedModel,
+        studentAnswer,
+        wordCount,
+        modelTimeoutMs,
+        maxOutputTokens,
+      });
 
-        return {
-          text,
-          model,
-        };
-      } catch (error) {
-        const failure = normalizeProviderError(error);
+      console.log(`OpenRouter model succeeded: ${response.model}`);
 
-        failures.push({
-          model,
-          attempt,
-          status: failure.status,
-          message: failure.message,
-        });
+      return {
+        text: response.text,
+        model: response.model,
+        requestedModel,
+      };
+    } catch (error) {
+      const failure = normalizeProviderError(error);
+      failures.push({
+        model: requestedModel,
+        status: failure.status,
+        message: failure.message,
+      });
 
-        console.warn(
-          `NVIDIA model failed: ${model}`,
-          failure.status,
-          failure.message,
-        );
+      console.warn(
+        `OpenRouter model failed: ${requestedModel}`,
+        failure.status,
+        failure.message,
+      );
 
-        if (failure.status === 401) {
-          throw new Error("NVIDIA_API_KEY không hợp lệ hoặc đã hết hiệu lực.");
-        }
+      if (failure.status === 401) {
+        throw new Error("OPENROUTER_API_KEY không hợp lệ hoặc đã hết hiệu lực.");
+      }
 
-        if (
-          failure.status === 400 ||
-          failure.status === 403 ||
-          failure.status === 404 ||
-          failure.status === 410
-        ) {
-          break;
-        }
-        const retryable =
-          failure.status === 0 ||
-          failure.status === 408 ||
-          failure.status === 429 ||
-          failure.status === 500 ||
-          failure.status === 502 ||
-          failure.status === 503 ||
-          failure.status === 504;
-
-        if (!retryable || attempt === RETRIES_PER_MODEL) {
-          break;
-        }
-
-        const waitMs =
-          1200 * 2 ** (attempt - 1) + Math.floor(Math.random() * 700);
-
-        console.warn(`Retrying ${model} after ${waitMs} ms`);
-
-        await sleep(waitMs);
+      if (index < models.length - 1) {
+        console.warn(`Switching to next OpenRouter model: ${requestedModel}`);
       }
     }
-
-    console.warn(`Switching to next NVIDIA model after failure: ${model}`);
   }
 
-  console.error("All NVIDIA models failed:", failures);
+  console.error("All OpenRouter models failed:", failures);
 
   const summary = failures
     .map(
-      (item) => `${item.model} (HTTP ${item.status || "?"}): ${item.message}`,
+      (item) =>
+        `${item.model} (HTTP ${item.status || "?"}): ${item.message}`,
     )
     .join(" | ");
 
@@ -334,88 +286,96 @@ async function callNvidiaWithFallback({
   );
 }
 
-async function callSingleNvidiaModel({
+async function callSingleOpenRouterModel({
   apiKey,
   model,
   studentAnswer,
   wordCount,
+  modelTimeoutMs,
+  maxOutputTokens,
 }) {
   const controller = new AbortController();
-
-  const timeoutId = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), modelTimeoutMs);
 
   try {
-    const response = await fetch(NVIDIA_API_URL, {
+    const payload = {
+      model,
+      messages: [
+        { role: "system", content: buildSystemPrompt() },
+        {
+          role: "user",
+          content: buildUserPrompt(studentAnswer, wordCount),
+        },
+      ],
+      temperature: 0.1,
+      top_p: 0.8,
+      max_tokens: maxOutputTokens,
+      stream: false,
+      response_format: { type: "json_object" },
+    };
+
+    const response = await fetch(OPENROUTER_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
         Authorization: `Bearer ${apiKey}`,
+        "HTTP-Referer": APP_REFERER,
+        "X-OpenRouter-Title": APP_TITLE,
       },
       signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: "system",
-            content: buildSystemPrompt(),
-          },
-          {
-            role: "user",
-            content: buildUserPrompt(studentAnswer, wordCount),
-          },
-        ],
-        temperature: 0.15,
-        top_p: 0.85,
-        max_tokens: MAX_OUTPUT_TOKENS,
-        stream: false,
-      }),
+      body: JSON.stringify(payload),
     });
 
     const rawText = await response.text();
-
     let data;
 
     try {
       data = JSON.parse(rawText);
     } catch {
-      data = {
-        rawText,
-      };
+      data = { rawText };
     }
 
     if (!response.ok) {
       const message =
         data?.error?.message ||
-        data?.detail ||
+        data?.error?.metadata?.raw ||
         data?.message ||
+        data?.detail ||
         data?.rawText ||
         `HTTP ${response.status}`;
 
       throw createProviderError(response.status, String(message));
     }
 
-    const content = data?.choices?.[0]?.message?.content;
+    const choice = data?.choices?.[0];
+    const message = choice?.message || {};
+    const content =
+      message.content || message.reasoning_content || message.reasoning || "";
 
-    const generatedText = Array.isArray(content)
-      ? content
-          .map((part) =>
-            typeof part === "string" ? part : part?.text || part?.content || "",
-          )
-          .join("")
-          .trim()
-      : String(content || "").trim();
+    const generatedText = extractMessageText(content);
 
     if (!generatedText) {
       throw createProviderError(502, `Model ${model} không trả về nội dung.`);
     }
 
-    return extractJsonObject(generatedText);
+    const jsonText = extractJsonObject(generatedText);
+
+    try {
+      JSON.parse(jsonText);
+    } catch {
+      throw createProviderError(502, `Model ${model} trả JSON không hợp lệ.`);
+    }
+
+    return {
+      text: jsonText,
+      model: String(data?.model || model),
+    };
   } catch (error) {
     if (error?.name === "AbortError") {
       throw createProviderError(
         408,
-        `Model ${model} xử lý quá ${MODEL_TIMEOUT_MS / 1000} giây.`,
+        `Model ${model} xử lý quá ${Math.round(modelTimeoutMs / 1000)} giây.`,
       );
     }
 
@@ -423,6 +383,28 @@ async function callSingleNvidiaModel({
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+function extractMessageText(content) {
+  if (typeof content === "string") {
+    return content.trim();
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        return part?.text || part?.content || "";
+      })
+      .join("")
+      .trim();
+  }
+
+  if (content && typeof content === "object") {
+    return String(content.text || content.content || "").trim();
+  }
+
+  return "";
 }
 
 function buildSystemPrompt() {
@@ -447,8 +429,7 @@ KHUNG LẬP LUẬN 5 BƯỚC BẮT BUỘC PHẢI ĐÁNH GIÁ:
 - Dẫn dắt từ bối cảnh thời đại hoặc thực tiễn phù hợp.
 - Nêu đúng và rõ vấn đề nghị luận.
 - Khẳng định tầm quan trọng của vấn đề đối với xã hội, đất nước hoặc lực lượng.
-- Có thể dùng châm ngôn hoặc trích dẫn chính thống khi phù hợp, nhưng không bắt buộc.
-- Tránh mở bài dài dòng, sáo rỗng hoặc xa chủ đề.
+- Tránh dài dòng, sáo rỗng hoặc xa chủ đề.
 
 2. GIẢI THÍCH BẢN CHẤT
 - Giải thích từ khóa trung tâm.
@@ -460,69 +441,57 @@ KHUNG LẬP LUẬN 5 BƯỚC BẮT BUỘC PHẢI ĐÁNH GIÁ:
 - Phân tích biểu hiện, nguyên nhân, vai trò, ý nghĩa, tác động hoặc hậu quả.
 - Có hệ thống luận điểm rõ ràng.
 - Mỗi luận điểm phải có lý lẽ.
-- Dẫn chứng phải có thật, phù hợp và gắn trực tiếp với luận điểm.
-- Ưu tiên dẫn chứng có chiều sâu lịch sử, xã hội, quốc gia, quốc tế hoặc liên quan nhiệm vụ bảo vệ an ninh, trật tự khi phù hợp.
-- Không bắt buộc phải dùng dẫn chứng ngành Công an; dẫn chứng phổ thông vẫn được chấp nhận nếu chính xác và được phân tích tốt.
-- Không cộng điểm cho việc liệt kê dẫn chứng mà không phân tích.
+- Dẫn chứng phải phù hợp và gắn trực tiếp với luận điểm.
+- Không cộng điểm cho việc chỉ liệt kê dẫn chứng mà không phân tích.
 
 4. PHẢN ĐỀ VÀ MỞ RỘNG
 - Nhìn nhận vấn đề từ góc độ ngược lại.
 - Chỉ ra biểu hiện lệch lạc, thờ ơ, cực đoan, phiến diện hoặc lợi dụng vấn đề khi phù hợp.
 - Phân biệt bản chất đúng với biểu hiện sai.
 - Thể hiện tư duy biện chứng, không quy chụp.
-- Tránh phản đề hình thức chỉ có một câu phê phán chung chung.
 
 5. LIÊN HỆ VÀ KẾT BÀI
 - Rút ra bài học nhận thức.
 - Nêu hành động cụ thể của bản thân.
-- Có thể liên hệ theo ba lớp:
-  a) Trách nhiệm của thế hệ trẻ đối với đất nước.
-  b) Trách nhiệm của người chiến sĩ Công an tương lai khi phù hợp.
-  c) Việc làm thực tế ngay hôm nay: học tập, rèn luyện đạo đức, kỷ luật, chấp hành pháp luật, nâng cao tri thức và tinh thần phục vụ nhân dân.
-- Kết bài khẳng định lại giá trị của vấn đề và thể hiện quyết tâm.
-- Không bắt buộc dùng công thức liên hệ cứng nhắc nếu đề không phù hợp.
+- Có thể liên hệ trách nhiệm thế hệ trẻ và người chiến sĩ Công an tương lai khi phù hợp.
+- Kết bài khẳng định lại giá trị vấn đề và thể hiện quyết tâm.
 
 PHÂN LOẠI DẠNG ĐỀ:
-- Dạng tư tưởng, đạo lý: tập trung phẩm chất, trách nhiệm, hy sinh, dũng cảm, kỷ luật, ý chí, lòng yêu nước, tinh thần phục vụ.
-- Dạng hiện tượng đời sống: tập trung xu hướng, vấn đề thời sự, không gian mạng, tội phạm công nghệ, lối sống thực dụng, thiên tai, đoàn kết quốc gia hoặc vấn đề xã hội.
-- Hãy xác định đúng dạng đề dựa trên bài viết, không được tự đặt đề mới.
+- Tư tưởng, đạo lý.
+- Hiện tượng đời sống.
+- Xác định dựa trên bài viết, không tự đặt đề mới.
 
-YÊU CẦU ĐẶC THÙ ĐỐI VỚI BÀI VB2 CÔNG AN:
+YÊU CẦU ĐẶC THÙ VB2 CÔNG AN:
 - Đánh giá tính logic, tinh thần trách nhiệm, ý thức pháp luật, thái độ phục vụ nhân dân và khả năng liên hệ thực tiễn.
-- Không được tự kết luận học sinh có hay không có lòng trung thành.
+- Không tự kết luận học sinh có hay không có lòng trung thành.
 - Không bắt buộc học sinh phải nhắc đến Đảng, Nhà nước hoặc lực lượng Công an trong mọi đề.
-- Khi học sinh có liên hệ ngành Công an, phải đánh giá xem liên hệ có tự nhiên, cụ thể và gắn với vấn đề hay chỉ mang tính khẩu hiệu.
-- Mọi nhận xét về chính trị, pháp luật và nghiệp vụ phải giữ tính khách quan, đúng mực, không cực đoan.
+- Khi có liên hệ ngành Công an, đánh giá xem liên hệ có tự nhiên, cụ thể và gắn với vấn đề hay chỉ mang tính khẩu hiệu.
 
 RUBRIC CỐ ĐỊNH, TỔNG 10 ĐIỂM:
 ${rubricText}
 
 CÁCH XẾP LOẠI:
 - Dưới 5,0: Chưa đạt
-- Từ 5,0 đến dưới 6,5: Trung bình
-- Từ 6,5 đến dưới 8,0: Khá
-- Từ 8,0 đến dưới 9,0: Giỏi
-- Từ 9,0 đến 10: Xuất sắc
+- 5,0 đến dưới 6,5: Trung bình
+- 6,5 đến dưới 8,0: Khá
+- 8,0 đến dưới 9,0: Giỏi
+- 9,0 đến 10: Xuất sắc
 
 QUY TẮC CHẤM:
 - Có đúng 7 tiêu chí và đúng thứ tự rubric.
 - Điểm không vượt điểm tối đa.
 - evidence phải là câu hoặc cụm từ thực sự có trong bài.
 - Nếu không có bằng chứng, để evidence là chuỗi rỗng.
-- nextStep phải hướng dẫn cụ thể cách nâng điểm.
+- nextStep hướng dẫn cụ thể cách nâng điểm.
 - Tổng điểm cuối cùng do hệ thống tính lại từ 7 tiêu chí.
-- Không tự cho điểm độ dài; bài dưới 500 chữ đã bị hệ thống chặn trước khi chấm.
 
 YÊU CẦU ĐÁNH GIÁ DẪN CHỨNG:
-- Xác định từng dẫn chứng quan trọng.
-- Đánh giá độ chính xác, mức độ phù hợp và cách phân tích.
-- Không xác nhận một sự kiện là đúng nếu không đủ căn cứ từ bài.
-- Nếu dẫn chứng có vẻ mơ hồ, hãy ghi "cần kiểm chứng" thay vì khẳng định sai.
+- Xác định dẫn chứng quan trọng.
+- Đánh giá mức độ phù hợp và cách phân tích.
+- Nếu dẫn chứng mơ hồ, ghi "cần kiểm chứng".
 - Không hạ thấp dẫn chứng phổ thông chỉ vì quen thuộc.
-- Chỉ đánh giá dẫn chứng cao khi nó được giải thích rõ và phục vụ trực tiếp cho luận điểm.
 
 YÊU CẦU paragraphFeedback:
-Đánh giá lần lượt:
 1. Mở bài
 2. Giải thích
 3. Phân tích và chứng minh
@@ -530,59 +499,34 @@ YÊU CẦU paragraphFeedback:
 5. Liên hệ và kết bài
 6. Bố cục và liên kết toàn bài
 
-status chỉ nhận:
-- good
-- warning
-- bad
+status chỉ nhận: good, warning, bad.
 
 YÊU CẦU PHÁT HIỆN VÀ SỬA LỖI:
-- Tối đa 12 lỗi đáng sửa nhất.
-- Không bịa lỗi.
-- original phải chép đúng câu hoặc cụm từ trong bài.
-- correction phải là câu sửa hoàn chỉnh.
-- explanation phải giải thích cụ thể.
-- Có thể phát hiện:
-  + chính tả;
-  + dùng từ;
-  + ngữ pháp;
-  + câu quá dài;
-  + câu tối nghĩa;
-  + lặp từ;
-  + lặp ý;
-  + chuyển đoạn yếu;
-  + lập luận nhảy cóc;
-  + mâu thuẫn;
-  + dẫn chứng không gắn luận điểm;
-  + khẳng định thiếu căn cứ;
-  + khẩu hiệu hóa;
-  + liên hệ bản thân quá chung chung.
+- Tối đa 6 lỗi quan trọng nhất.
+- original chép đúng câu hoặc cụm từ trong bài.
+- correction là câu sửa hoàn chỉnh.
+- explanation giải thích cụ thể.
+- Có thể phát hiện chính tả, dùng từ, ngữ pháp, câu dài, câu tối nghĩa, lặp ý, liên kết, lập luận, dẫn chứng, khẩu hiệu hóa và liên hệ chung chung.
 
 YÊU CẦU BỔ SUNG Ý:
-- Đề xuất từ 2 đến 6 ý sát chủ đề.
+- Từ 2 đến 4 ý sát chủ đề.
 - Không bịa số liệu hoặc sự kiện.
-- insertionPoint phải nói rõ nên thêm vào phần nào.
-- sampleSentence chỉ là câu mẫu gợi ý để học sinh tự phát triển.
+- Nêu vị trí nên chèn và câu mẫu.
 
 YÊU CẦU DÀN Ý:
-- improvedOutline có từ 5 đến 8 ý.
+- Từ 5 đến 8 ý.
 - Bám sát bài hiện tại.
-- Tập trung sửa phần còn yếu hoặc thiếu.
-- Không thay đổi hoàn toàn quan điểm của học sinh.
 
 YÊU CẦU revisedPassage:
-- Chỉ viết lại từ 1 đến 3 đoạn yếu nhất.
-- Dài khoảng 180 đến 300 chữ.
-- Giữ chủ đề và quan điểm chính.
-- Sửa lỗi, tăng tính logic và bổ sung ý còn thiếu.
+- Viết lại 1 đến 3 đoạn yếu nhất.
+- Dài khoảng 120 đến 200 chữ.
 - Không viết lại toàn bộ bài.
-- Không đưa thông tin thực tế chưa được kiểm chứng.
 
 CHỈ TRẢ VỀ MỘT ĐỐI TƯỢNG JSON HỢP LỆ.
 KHÔNG DÙNG MARKDOWN.
-KHÔNG ĐẶT JSON TRONG DẤU BA DẤU NHÁY.
-KHÔNG VIẾT BẤT KỲ NỘI DUNG NÀO TRƯỚC HOẶC SAU JSON.
+KHÔNG VIẾT NỘI DUNG TRƯỚC HOẶC SAU JSON.
 
-JSON PHẢI CÓ CẤU TRÚC:
+CẤU TRÚC JSON:
 {
   "essayType": "",
   "centralIssue": "",
@@ -655,64 +599,16 @@ ${studentAnswer}
 --------------------
 
 NHIỆM VỤ BẮT BUỘC:
-
-1. Xác định bài thuộc dạng:
-- tư tưởng, đạo lý; hoặc
-- hiện tượng đời sống.
-
-2. Xác định vấn đề trung tâm học sinh đang nghị luận.
-
-3. Chấm đủ 7 tiêu chí theo rubric cố định.
-
-4. Với mỗi tiêu chí:
-- cho điểm;
-- nhận xét cụ thể;
-- trích dẫn bằng chứng ngắn từ bài khi có;
-- nêu cách nâng điểm.
-
-5. Đánh giá đủ khung 5 bước:
-- mở bài trực diện;
-- giải thích bản chất;
-- phân tích và chứng minh;
-- phản đề và mở rộng;
-- liên hệ và kết bài.
-
-6. Đánh giá riêng các dẫn chứng quan trọng:
-- mức độ phù hợp;
-- độ chính xác hoặc lưu ý cần kiểm chứng;
-- chất lượng phân tích;
-- cách cải thiện.
-
-7. Phát hiện lỗi:
-- chính tả;
-- dùng từ;
-- ngữ pháp;
-- câu dài;
-- câu tối nghĩa;
-- lặp từ;
-- lặp ý;
-- liên kết;
-- lập luận;
-- dẫn chứng;
-- khẩu hiệu hóa;
-- liên hệ chung chung.
-
-8. Với mỗi lỗi:
-- chép đúng câu hoặc cụm từ gốc;
-- đưa câu sửa;
-- giải thích lý do.
-
-9. Đề xuất các ý còn thiếu:
-- ý cần thêm;
-- tác dụng;
-- vị trí chèn;
-- một câu mẫu.
-
-10. Tạo dàn ý nâng điểm dựa trên chính bài hiện tại.
-
-11. Viết lại từ 1 đến 3 đoạn yếu nhất.
-
-12. Không bịa chi tiết mà học sinh chưa viết.
+1. Xác định dạng bài và vấn đề trung tâm.
+2. Chấm đủ 7 tiêu chí.
+3. Mỗi tiêu chí có điểm, nhận xét, bằng chứng và hướng nâng điểm.
+4. Đánh giá đủ khung 5 bước.
+5. Đánh giá riêng dẫn chứng quan trọng.
+6. Chỉ ra tối đa 6 lỗi, sửa lỗi và giải thích.
+7. Đề xuất 2 đến 4 ý còn thiếu, vị trí chèn và câu mẫu.
+8. Tạo dàn ý nâng điểm.
+9. Viết lại 1 đến 3 đoạn yếu nhất.
+10. Không bịa chi tiết mà học sinh chưa viết.
 `.trim();
 }
 
@@ -726,7 +622,9 @@ function sanitizeResult(result, wordCount) {
 
     return {
       name: expected.name,
-      score: roundToTenth(clamp(Number(received.score), 0, expected.maxScore)),
+      score: roundToTenth(
+        clamp(Number(received.score), 0, expected.maxScore),
+      ),
       maxScore: expected.maxScore,
       comment: limitString(received.comment || "Chưa có nhận xét.", 1800),
       evidence: limitString(received.evidence || "", 600),
@@ -756,18 +654,15 @@ function sanitizeResult(result, wordCount) {
     errors: sanitizeErrors(result?.errors),
     addedIdeas: sanitizeAddedIdeas(result?.addedIdeas),
     improvedOutline: sanitizeStringArray(result?.improvedOutline, 8),
-    revisedPassage: limitString(result?.revisedPassage || "", 7000),
+    revisedPassage: limitString(result?.revisedPassage || "", 5000),
   };
 }
 
 function sanitizeParagraphFeedback(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
+  if (!Array.isArray(value)) return [];
 
   return value.slice(0, 6).map((item) => {
     const allowed = ["good", "warning", "bad"];
-
     const status = allowed.includes(item?.status) ? item.status : "warning";
 
     return {
@@ -784,11 +679,9 @@ function sanitizeParagraphFeedback(value) {
 }
 
 function sanitizeEvidenceReview(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
+  if (!Array.isArray(value)) return [];
 
-  return value.slice(0, 8).map((item) => ({
+  return value.slice(0, 6).map((item) => ({
     evidence: limitString(item?.evidence || "", 700),
     relevance: limitString(item?.relevance || "", 700),
     accuracyNote: limitString(item?.accuracyNote || "", 700),
@@ -798,11 +691,9 @@ function sanitizeEvidenceReview(value) {
 }
 
 function sanitizeErrors(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
+  if (!Array.isArray(value)) return [];
 
-  return value.slice(0, 12).map((item) => ({
+  return value.slice(0, 6).map((item) => ({
     type: limitString(item?.type || "Diễn đạt", 120),
     original: limitString(item?.original || "", 1000),
     correction: limitString(item?.correction || "", 1500),
@@ -811,11 +702,9 @@ function sanitizeErrors(value) {
 }
 
 function sanitizeAddedIdeas(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
+  if (!Array.isArray(value)) return [];
 
-  return value.slice(0, 6).map((item) => ({
+  return value.slice(0, 4).map((item) => ({
     idea: limitString(item?.idea || "", 1000),
     why: limitString(item?.why || "", 1500),
     insertionPoint: limitString(item?.insertionPoint || "", 700),
@@ -867,10 +756,7 @@ function jsonResponse(data, status, origin) {
     headers["Access-Control-Allow-Headers"] = "Content-Type";
   }
 
-  return new Response(JSON.stringify(data), {
-    status,
-    headers,
-  });
+  return new Response(JSON.stringify(data), { status, headers });
 }
 
 function jsonResponseWithoutCors(data, status) {
@@ -895,11 +781,10 @@ function extractJsonObject(text) {
     JSON.parse(cleaned);
     return cleaned;
   } catch {
-    // Continue searching for a JSON object.
+    // Tiếp tục tìm JSON.
   }
 
   const start = cleaned.indexOf("{");
-
   if (start === -1) {
     throw createProviderError(502, "AI không trả về đối tượng JSON.");
   }
@@ -926,21 +811,13 @@ function extractJsonObject(text) {
       continue;
     }
 
-    if (inString) {
-      continue;
-    }
+    if (inString) continue;
 
-    if (character === "{") {
-      depth += 1;
-    }
-
-    if (character === "}") {
-      depth -= 1;
-    }
+    if (character === "{") depth += 1;
+    if (character === "}") depth -= 1;
 
     if (depth === 0) {
       const candidate = cleaned.slice(start, index + 1);
-
       try {
         JSON.parse(candidate);
         return candidate;
@@ -961,13 +838,10 @@ function createProviderError(status, message) {
 
 function normalizeProviderError(error) {
   return {
-    status: Number(error?.status) || (error?.name === "AbortError" ? 408 : 0),
+    status:
+      Number(error?.status) || (error?.name === "AbortError" ? 408 : 0),
     message: error instanceof Error ? error.message : String(error),
   };
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeText(value) {
@@ -978,18 +852,12 @@ function normalizeText(value) {
 }
 
 function countWords(text) {
-  if (!text) {
-    return 0;
-  }
-
+  if (!text) return 0;
   return text.split(/\s+/u).filter(Boolean).length;
 }
 
 function sanitizeStringArray(value, maxItems) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
+  if (!Array.isArray(value)) return [];
   return value
     .slice(0, maxItems)
     .map((item) => limitString(item, 1200))
@@ -997,43 +865,27 @@ function sanitizeStringArray(value, maxItems) {
 }
 
 function levelFromScore(score) {
-  if (score < 5) {
-    return "Chưa đạt";
-  }
-
-  if (score < 6.5) {
-    return "Trung bình";
-  }
-
-  if (score < 8) {
-    return "Khá";
-  }
-
-  if (score < 9) {
-    return "Giỏi";
-  }
-
+  if (score < 5) return "Chưa đạt";
+  if (score < 6.5) return "Trung bình";
+  if (score < 8) return "Khá";
+  if (score < 9) return "Giỏi";
   return "Xuất sắc";
 }
 
 function statusLabelFromStatus(status) {
-  if (status === "good") {
-    return "Đạt tốt";
-  }
-
-  if (status === "bad") {
-    return "Cần sửa";
-  }
-
+  if (status === "good") return "Đạt tốt";
+  if (status === "bad") return "Cần sửa";
   return "Chưa đầy đủ";
 }
 
 function clamp(value, min, max) {
-  if (!Number.isFinite(value)) {
-    return min;
-  }
-
+  if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
+}
+
+function clampInteger(value, min, max, fallback) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.round(Math.min(max, Math.max(min, value)));
 }
 
 function roundToTenth(value) {
@@ -1041,7 +893,5 @@ function roundToTenth(value) {
 }
 
 function limitString(value, maxLength) {
-  return String(value || "")
-    .trim()
-    .slice(0, maxLength);
+  return String(value || "").trim().slice(0, maxLength);
 }
