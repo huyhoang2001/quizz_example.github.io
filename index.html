@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#eef2ff">
+  <title>Quiz vui — Học nhẹ, nhớ lâu</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="theme-toggle" id="themeToggle" type="button" aria-label="Chuyển sang giao diện tối" aria-pressed="false"><span class="theme-icon" aria-hidden="true">☾</span><span class="theme-text">Tối</span></button>
+  <a class="skip-link" href="#appContainer">Bỏ qua đến nội dung chính</a>
+  <main class="app-shell" id="appContainer">
+    <section class="screen active" id="setupScreen" aria-labelledby="setupTitle">
+      <header class="welcome-header">
+        <span class="eyebrow">Không gian học tập của bạn</span>
+        <h1 id="setupTitle">Quiz vui, học thật dễ</h1>
+        <p class="subtitle">Tải bộ câu hỏi lên, chọn cách học phù hợp rồi bắt đầu khi bạn sẵn sàng.</p>
+      </header>
+
+      <div class="setup-section upload-section">
+        <div class="section-heading">
+          <span class="step-number" aria-hidden="true">1</span>
+          <div><h2>Tải bộ câu hỏi</h2><p>Hỗ trợ tệp Excel .xlsx hoặc .xls</p></div>
+        </div>
+        <div class="import-area" id="importArea" role="button" tabindex="0" aria-controls="fileInput" aria-describedby="fileHelp">
+          <svg class="upload-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <p><strong>Chọn tệp Excel</strong> hoặc kéo thả vào đây</p>
+          <p id="fileHelp" class="helper-text">Cột cần có: text, option_0–3 và correct (0–3 hoặc A–D)</p>
+          <input type="file" id="fileInput" accept=".xlsx,.xls" hidden>
+          <div class="file-info" id="fileInfo" role="status" aria-live="polite" style="display:none"></div>
+        </div>
+      </div>
+
+      <div class="setup-section">
+        <div class="section-heading">
+          <span class="step-number" aria-hidden="true">2</span>
+          <div><h2>Chọn cách luyện tập</h2><p>Bạn luôn có thể quay lại và đổi lựa chọn.</p></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="quizMode">Chế độ làm bài</label>
+            <select id="quizMode"><option value="review">Ôn tập — theo thứ tự, không giới hạn giờ</option><option value="challenge" selected>Thử thách — đề ngẫu nhiên, có tính giờ</option><option value="cram">Học đề cương — xem câu hỏi và đáp án</option></select>
+          </div>
+          <div class="form-group">
+            <label for="questionCount">Số lượng câu hỏi</label>
+            <select id="questionCount"><option value="10">10 câu</option><option value="20" selected>20 câu</option><option value="30">30 câu</option><option value="40">40 câu</option><option value="50">50 câu</option><option value="all">Tất cả</option></select>
+          </div>
+        </div>
+
+        <div id="challengeOptions" class="challenge-options">
+          <h3>Chọn một đề</h3>
+          <div class="deck-grid" id="deckGrid" role="group" aria-label="Danh sách đề"></div>
+          <button class="btn btn-outline btn-sm" id="btnRefreshDecks" type="button">Tạo lại danh sách đề</button>
+          <h3>Chọn thời gian</h3>
+          <div class="speed-grid" id="speedGrid" role="group" aria-label="Thời gian làm bài"></div>
+        </div>
+      </div>
+
+      <div class="start-panel">
+        <p id="statusText" class="status-text" role="status" aria-live="polite"></p>
+        <button class="btn btn-primary btn-lg" id="btnStart" type="button" disabled>Bắt đầu làm bài <span aria-hidden="true">→</span></button>
+      </div>
+    </section>
+
+    <section class="screen" id="quizScreen" aria-label="Bài quiz">
+      <div class="quiz-top-bar">
+        <span class="mode-badge" id="modeBadge">Thử thách</span>
+        <div class="quiz-actions">
+          <div class="timer-box" id="timerBox" role="timer" aria-label="Thời gian còn lại"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="8" stroke="currentColor" stroke-width="2"/><path d="M12 9v4l2.5 1.5M9 3h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span id="timerDisplay">60:00</span></div>
+          <button class="btn btn-outline btn-sm" id="btnToggleView" type="button"><span id="toggleViewText">Xem từng câu</span></button>
+          <button class="btn btn-danger btn-sm" id="btnSubmitQuiz" type="button">Nộp bài</button>
+        </div>
+      </div>
+      <div class="palette"><div class="palette-label"><strong>Tiến độ</strong><span>Chọn số để đến câu hỏi</span></div><div id="paletteDots" class="palette-dots"></div></div>
+      <div id="questionsListContainer"></div>
+      <nav id="singleNav" class="single-nav" aria-label="Điều hướng câu hỏi" style="display:none"><button class="btn btn-outline btn-sm" id="btnPrev" type="button">← Câu trước</button><span id="singleNavInfo">Câu 1/20</span><button class="btn btn-outline btn-sm" id="btnNext" type="button">Câu sau →</button></nav>
+    </section>
+
+    <section class="screen" id="resultScreen" aria-labelledby="resultTitle">
+      <header class="result-header"><span class="eyebrow">Bạn đã hoàn thành</span><h2 id="resultTitle">Kết quả của bạn</h2><p>Mỗi lần luyện tập là một bước tiến nhỏ.</p></header>
+      <div class="result-summary"><div class="result-score" id="resultScore">0/0</div><p class="score-label">Số câu trả lời đúng</p><div class="result-detail"><span class="result-correct">Đúng: <strong id="correctCount">0</strong></span><span class="result-wrong">Cần xem lại: <strong id="wrongCount">0</strong></span></div><div class="result-dots" id="resultDots" role="img" aria-label="Kết quả từng câu"></div><p id="resultPercent"></p></div>
+      <section class="speed-chart" aria-labelledby="speedChartTitle"><div class="speed-chart-heading"><div><span class="eyebrow">Nhịp độ làm bài</span><h3 id="speedChartTitle">Tốc độ hoàn thành</h3></div><strong id="speedChartValue">0 giây/câu</strong></div><div class="speed-track" aria-hidden="true"><span id="speedChartBar"></span></div><div class="speed-stats"><span>Tổng thời gian <strong id="elapsedTime">00:00</strong></span><span id="speedNote">Nhịp độ của bạn</span></div></section>
+      <div class="btn-group center"><button class="btn btn-outline" id="btnBackToSetup" type="button">Về trang chính</button><button class="btn btn-outline" id="btnRetake" type="button">↻ Làm lại đề này</button><button class="btn btn-primary" id="btnReview" type="button">Xem lại đáp án</button></div>
+    </section>
+
+    <section class="screen" id="reviewScreen" aria-labelledby="reviewTitle"><header class="result-header"><span class="eyebrow">Học từ câu trả lời</span><h2 id="reviewTitle">Xem lại bài làm</h2></header><div id="reviewContainer"></div><div class="btn-group center"><button class="btn btn-outline" id="btnBackToResult" type="button">← Quay lại kết quả</button></div></section>
+  </main>
+  <script src="script.js" defer></script>
+</body>
+</html>
