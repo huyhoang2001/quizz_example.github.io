@@ -1,0 +1,6 @@
+name = "essay-grader-api"
+main = "worker.js"
+compatibility_date = "2026-07-22"
+
+[vars]
+GEMINI_MODEL = "gemini-3.1-pro"
