@@ -1,9 +1,10 @@
 name = "essay-grader-api"
 main = "worker.js"
-compatibility_date = "2026-07-22"
+compatibility_date = "2026-07-23"
 
 [vars]
-OPENROUTER_MODELS = "google/gemma-4-31b-it:free,openrouter/free"
-OPENROUTER_MODEL_TIMEOUT_MS = "100000"
-OPENROUTER_MAX_OUTPUT_TOKENS = "2800"
-OPENROUTER_RETRIES_PER_MODEL = "1"
+GEMINI_MODELS = "gemini-3-flash-preview"
+GEMINI_MODEL_TIMEOUT_MS = "100000"
+GEMINI_MAX_OUTPUT_TOKENS = "3600"
+GEMINI_RETRIES_PER_MODEL = "2"
+GEMINI_THINKING_LEVEL = "LOW"
