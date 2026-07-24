@@ -3,7 +3,7 @@ main = "worker.js"
 compatibility_date = "2026-07-24"
 
 [vars]
-GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_API_BASE_URL = "https://geminihiname.vercel.app/v1beta/models"
 GEMINI_MODELS = "gemini-3-flash-preview"
 GEMINI_MODEL_TIMEOUT_MS = "100000"
 GEMINI_MAX_OUTPUT_TOKENS = "3600"

@@ -320,6 +320,7 @@ export default {
           String(env.GEMINI_API_BASE_URL || DEFAULT_GEMINI_API_BASE)
             .trim()
             .replace(/\/+$/, ""),
+        relaySecret: String(env.GEMINI_RELAY_SECRET || ""),
         models: getModels(env),
         studentAnswer,
         wordCount,
@@ -421,6 +422,7 @@ function getThinkingLevel(env) {
 async function callGeminiWithFallback({
   apiKey,
   apiBaseUrl,
+  relaySecret,
   models,
   studentAnswer,
   wordCount,
@@ -445,6 +447,7 @@ async function callGeminiWithFallback({
         const text = await callSingleGeminiModel({
           apiKey,
           apiBaseUrl,
+          relaySecret,
           model,
           studentAnswer,
           wordCount,
@@ -534,6 +537,7 @@ async function callGeminiWithFallback({
 async function callSingleGeminiModel({
   apiKey,
   apiBaseUrl,
+  relaySecret,
   model,
   studentAnswer,
   wordCount,
@@ -544,6 +548,7 @@ async function callSingleGeminiModel({
   const result = await sendGeminiRequest({
     apiKey,
     apiBaseUrl,
+    relaySecret,
     model,
     studentAnswer,
     wordCount,
@@ -618,6 +623,7 @@ async function callSingleGeminiModel({
 async function sendGeminiRequest({
   apiKey,
   apiBaseUrl,
+  relaySecret,
   model,
   studentAnswer,
   wordCount,
@@ -659,12 +665,18 @@ async function sendGeminiRequest({
     ":generateContent";
 
   try {
+    const headers = {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    };
+
+    if (apiBaseUrl !== DEFAULT_GEMINI_API_BASE && relaySecret) {
+      headers["x-relay-secret"] = relaySecret;
+    }
+
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
+      headers,
       signal: controller.signal,
       body: JSON.stringify(payload),
     });

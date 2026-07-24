@@ -24,6 +24,10 @@ The relay must forward the request path, body, `Content-Type`, and
 `x-goog-api-key` header to the Gemini API. Do not log the API key or request
 body. Restrict relay access to this application and apply rate limits.
 
+This deployment also sends the `GEMINI_RELAY_SECRET` Worker secret as the
+`x-relay-secret` header. The Vercel relay must validate it against its own
+`RELAY_SECRET` environment variable before forwarding a request.
+
 For a production setup without a relay, migrate the provider call to Vertex AI
 and select a supported regional endpoint such as `asia-southeast1` or
 `us-central1`. Vertex AI requires Google Cloud authentication and cannot use
