@@ -4,7 +4,7 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:5500",
 ];
 
-const GEMINI_API_BASE =
+const DEFAULT_GEMINI_API_BASE =
   "https://generativelanguage.googleapis.com/v1beta/models";
 
 const DEFAULT_MODELS = ["gemini-3-flash-preview"];
@@ -316,6 +316,10 @@ export default {
 
       const aiResult = await callGeminiWithFallback({
         apiKey: env.GEMINI_API_KEY,
+        apiBaseUrl:
+          String(env.GEMINI_API_BASE_URL || DEFAULT_GEMINI_API_BASE)
+            .trim()
+            .replace(/\/+$/, ""),
         models: getModels(env),
         studentAnswer,
         wordCount,
@@ -416,6 +420,7 @@ function getThinkingLevel(env) {
 
 async function callGeminiWithFallback({
   apiKey,
+  apiBaseUrl,
   models,
   studentAnswer,
   wordCount,
@@ -439,6 +444,7 @@ async function callGeminiWithFallback({
 
         const text = await callSingleGeminiModel({
           apiKey,
+          apiBaseUrl,
           model,
           studentAnswer,
           wordCount,
@@ -527,6 +533,7 @@ async function callGeminiWithFallback({
 
 async function callSingleGeminiModel({
   apiKey,
+  apiBaseUrl,
   model,
   studentAnswer,
   wordCount,
@@ -534,42 +541,16 @@ async function callSingleGeminiModel({
   maxOutputTokens,
   thinkingLevel,
 }) {
-  /*
-   * Ưu tiên cú pháp responseFormat mới.
-   * Nếu API trả 400 do không hỗ trợ, tự gọi lại bằng
-   * responseMimeType + responseJsonSchema của generateContent cũ.
-   */
-  let result = await sendGeminiRequest({
+  const result = await sendGeminiRequest({
     apiKey,
+    apiBaseUrl,
     model,
     studentAnswer,
     wordCount,
     timeoutMs,
     maxOutputTokens,
     thinkingLevel,
-    schemaMode: "responseFormat",
   });
-
-  if (
-    result.status === 400 &&
-    isUnsupportedResponseFormatError(result.data)
-  ) {
-    console.warn(
-      `${model} không chấp nhận responseFormat; ` +
-        "gọi lại bằng responseJsonSchema.",
-    );
-
-    result = await sendGeminiRequest({
-      apiKey,
-      model,
-      studentAnswer,
-      wordCount,
-      timeoutMs,
-      maxOutputTokens,
-      thinkingLevel,
-      schemaMode: "legacy",
-    });
-  }
 
   if (!result.ok) {
     console.error("Gemini API error:", result.status, result.data);
@@ -636,13 +617,13 @@ async function callSingleGeminiModel({
 
 async function sendGeminiRequest({
   apiKey,
+  apiBaseUrl,
   model,
   studentAnswer,
   wordCount,
   timeoutMs,
   maxOutputTokens,
   thinkingLevel,
-  schemaMode,
 }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -652,19 +633,9 @@ async function sendGeminiRequest({
     thinkingConfig: {
       thinkingLevel,
     },
+    responseMimeType: "application/json",
+    responseJsonSchema: GRADE_RESPONSE_SCHEMA,
   };
-
-  if (schemaMode === "responseFormat") {
-    generationConfig.responseFormat = {
-      text: {
-        mimeType: "application/json",
-        schema: GRADE_RESPONSE_SCHEMA,
-      },
-    };
-  } else {
-    generationConfig.responseMimeType = "application/json";
-    generationConfig.responseJsonSchema = GRADE_RESPONSE_SCHEMA;
-  }
 
   const payload = {
     systemInstruction: {
@@ -684,7 +655,7 @@ async function sendGeminiRequest({
   };
 
   const endpoint =
-    `${GEMINI_API_BASE}/${encodeURIComponent(model)}` +
+    `${apiBaseUrl}/${encodeURIComponent(model)}` +
     ":generateContent";
 
   try {
@@ -727,23 +698,6 @@ async function sendGeminiRequest({
   } finally {
     clearTimeout(timer);
   }
-}
-
-function isUnsupportedResponseFormatError(data) {
-  const message = String(
-    data?.error?.message ||
-      data?.message ||
-      data?.rawText ||
-      "",
-  ).toLowerCase();
-
-  return (
-    message.includes("responseformat") ||
-    message.includes("response_format") ||
-    message.includes("unknown name") ||
-    message.includes("unknown field") ||
-    message.includes("invalid json payload")
-  );
 }
 
 function buildSystemPrompt() {
