@@ -75,9 +75,6 @@ essay-grader-updated/
 ├── worker.js            # Cloudflare Worker API
 ├── wrangler.toml        # Cấu hình deploy Worker
 ├── option.xlsx          # Tệp câu hỏi mẫu
-<<<<<<< HEAD
-├── DEPLOYMENT.md        # Ghi chú triển khai Gemini
-=======
 ├── README.md            # Ghi chú triển khai Gemini
 >>>>>>> 17b9376024a9648f8683791e5bb2e426e128d768
 ├── package.json

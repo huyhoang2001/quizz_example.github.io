@@ -10,6 +10,8 @@
   let timerInterval = null;
   let timeRemaining = 3600;
   let quizStartedAt = 0;
+  let lastAnswerAt = 0;
+  let questionTimeMs = [];
   let quizSubmitted = false;
   let markedQuestions = new Set();
   let selectedDeck = 0;
@@ -48,7 +50,6 @@
   const resultScore = $("#resultScore");
   const correctCount = $("#correctCount");
   const wrongCount = $("#wrongCount");
-  const resultDots = $("#resultDots");
   const resultPercent = $("#resultPercent");
   const btnBackToSetup = $("#btnBackToSetup");
   const btnReview = $("#btnReview");
@@ -58,6 +59,11 @@
   const themeToggle = $("#themeToggle");
   const speedChartValue = $("#speedChartValue");
   const speedChartBar = $("#speedChartBar");
+  const speedChartArea = $("#speedChartArea");
+  const speedChartPoints = $("#speedChartPoints");
+  const speedPlot = $("#speedPlot");
+  const speedChartTooltip = $("#speedChartTooltip");
+  const speedChartLastQuestion = $("#speedChartLastQuestion");
   const elapsedTime = $("#elapsedTime");
   const speedNote = $("#speedNote");
 
@@ -422,6 +428,8 @@
     isListView = true;
     quizSubmitted = false;
     quizStartedAt = Date.now();
+    lastAnswerAt = quizStartedAt;
+    questionTimeMs = new Array(quizQuestions.length).fill(0);
 
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = null;
@@ -589,6 +597,7 @@
         if (quizMode === "cram" || quizSubmitted) return;
         const q = parseInt(this.dataset.q);
         const o = parseInt(this.dataset.o);
+        recordQuestionAnswerTime(q, o);
         userAnswers[q] = o;
         const radio = this.querySelector('input[type="radio"]');
         if (radio) radio.checked = true;
@@ -620,6 +629,20 @@
       if (opt.querySelector('input[type="radio"]')?.checked)
         opt.classList.add("selected");
     });
+  }
+
+  function recordQuestionAnswerTime(questionIndex, optionIndex) {
+    if (userAnswers[questionIndex] === optionIndex) return;
+
+    const now = Date.now();
+    // Mỗi lần khoanh tạo một mốc mới. Câu bị bỏ qua chỉ tính từ
+    // lần khoanh gần nhất đến lúc người dùng quay lại trả lời câu đó.
+    const previousAnchor = lastAnswerAt || quizStartedAt || now;
+    const elapsed = Math.max(250, now - previousAnchor);
+
+    questionTimeMs[questionIndex] =
+      (questionTimeMs[questionIndex] || 0) + elapsed;
+    lastAnswerAt = now;
   }
 
   // ============ PALETTE ============
@@ -728,24 +751,26 @@
       };
     });
     const total = quizQuestions.length;
-    resultScore.textContent = `${correctTotal}/${total}`;
+    const score = Math.round(
+      (correctTotal / Math.max(total, 1)) * 1000,
+    ) / 10;
+    const passed = score >= 80;
+    resultScore.textContent = `${score}/100`;
     correctCount.textContent = correctTotal;
     wrongCount.textContent = total - correctTotal;
-    resultPercent.textContent = `Tỷ lệ: ${Math.round((correctTotal / total) * 100)}%`;
-    resultDots.innerHTML = results
-      .map((r, i) => `<span class="result-dot ${r.correct ? "correct" : "wrong"}" title="Câu ${i + 1}: ${r.correct ? "Đúng" : "Sai"}"></span>`)
-      .join("");
-    resultDots.setAttribute("aria-label", `${correctTotal} câu đúng, ${total - correctTotal} câu sai trên tổng số ${total} câu`);
+    resultPercent.textContent = passed
+      ? `ĐẬU · ${score} điểm`
+      : `RỚT · ${score} điểm`;
+    resultPercent.classList.toggle("passed", passed);
+    resultPercent.classList.toggle("failed", !passed);
 
     const elapsedSeconds = Math.max(1, Math.round((Date.now() - quizStartedAt) / 1000));
     const averageSeconds = elapsedSeconds / Math.max(total, 1);
     const targetSeconds = quizMode === "challenge" ? (({ normal: 3600, medium: 2700, hard: 1800 }[selectedSpeed] || 3600) / Math.max(total, 1)) : 120;
-    const speedPercent = Math.min(100, Math.round((targetSeconds / Math.max(averageSeconds, 1)) * 70));
     elapsedTime.textContent = formatDuration(elapsedSeconds);
     speedChartValue.textContent = averageSeconds < 60 ? `${Math.round(averageSeconds)} giây/câu` : `${(averageSeconds / 60).toFixed(1)} phút/câu`;
     speedNote.textContent = averageSeconds <= targetSeconds ? "Nhanh hơn nhịp mục tiêu" : "Chậm hơn nhịp mục tiêu";
-    speedChartBar.style.width = "0%";
-    requestAnimationFrame(() => { speedChartBar.style.width = `${speedPercent}%`; });
+    renderQuestionSpeedChart(results);
     window._lastResults = results;
     window._lastQuizQuestions = quizQuestions;
     window._lastUserAnswers = userAnswers;
@@ -761,6 +786,135 @@
   }
 
   // ============ XEM LẠI ============
+  function renderQuestionSpeedChart(results) {
+    const width = 1000;
+    const height = 220;
+    const left = 24;
+    const right = 24;
+    const top = 22;
+    const bottom = 30;
+    const chartWidth = width - left - right;
+    const chartHeight = height - top - bottom;
+    const values = questionTimeMs.map((value) => value / 1000);
+    const answeredValues = values
+      .filter((value) => value > 0)
+      .sort((a, b) => a - b);
+    const percentileIndex = Math.max(
+      0,
+      Math.ceil(answeredValues.length * 0.9) - 1,
+    );
+    const scaleMax = Math.min(
+      300,
+      Math.max(30, (answeredValues[percentileIndex] || 5) * 1.2),
+    );
+    const denominator = Math.max(values.length - 1, 1);
+    const points = values.map((value, index) => {
+      const x = left + (index / denominator) * chartWidth;
+      const normalized = Math.min(value, scaleMax) / scaleMax;
+      const y = top + chartHeight - normalized * chartHeight;
+      return { x, y, value, index };
+    });
+
+    const linePath = points
+      .map(
+        (point, index) =>
+          `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`,
+      )
+      .join(" ");
+    const baseline = top + chartHeight;
+    const areaPath = points.length
+      ? `${linePath} L ${points.at(-1).x.toFixed(2)} ${baseline} L ${points[0].x.toFixed(2)} ${baseline} Z`
+      : "";
+
+    speedChartBar.setAttribute("d", linePath);
+    speedChartArea.setAttribute("d", areaPath);
+    speedChartLastQuestion.textContent = `Câu ${values.length}`;
+    speedChartPoints.innerHTML = points
+      .map((point) => {
+        const answered = userAnswers[point.index] !== null;
+        return `<circle class="speed-chart-point ${answered ? "answered" : "unanswered"}" data-chart-index="${point.index}" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="${answered ? 5.5 : 4}"/>`;
+      })
+      .join("");
+
+    const showTooltip = (index, clientX, clientY) => {
+      const point = points[index];
+      const result = results[index];
+      const optionIndex = userAnswers[index];
+      const optionLabel = Number.isInteger(optionIndex)
+        ? ["A", "B", "C", "D"][optionIndex]
+        : "Chưa khoanh";
+      const status =
+        optionIndex === null
+          ? "Chưa trả lời"
+          : result?.correct
+            ? "Đúng"
+            : "Sai";
+      const timeLabel =
+        point.value > 0
+          ? point.value < 60
+            ? `${Math.max(1, Math.round(point.value))} giây`
+            : `${(point.value / 60).toFixed(1)} phút`
+          : "Chưa ghi nhận";
+      const capLabel =
+        point.value > scaleMax
+          ? ` · ghim ở trần ${
+              scaleMax < 60
+                ? `${Math.round(scaleMax)} giây`
+                : `${(scaleMax / 60).toFixed(1)} phút`
+            }`
+          : "";
+
+      speedChartTooltip.replaceChildren();
+      const title = document.createElement("strong");
+      title.textContent = `Câu ${index + 1}`;
+      const detail = document.createElement("span");
+      detail.textContent =
+        `${optionLabel} · ${timeLabel}${capLabel} · ${status}`;
+      speedChartTooltip.append(title, detail);
+      speedChartTooltip.hidden = false;
+
+      const bounds = speedPlot.getBoundingClientRect();
+      const localX = clientX - bounds.left;
+      const localY = clientY - bounds.top;
+      const tooltipWidth = speedChartTooltip.offsetWidth;
+      const tooltipHeight = speedChartTooltip.offsetHeight;
+      speedChartTooltip.style.left = `${Math.min(
+        Math.max(localX, tooltipWidth / 2 + 8),
+        bounds.width - tooltipWidth / 2 - 8,
+      )}px`;
+      speedChartTooltip.style.top = `${Math.max(
+        8,
+        localY - tooltipHeight - 18,
+      )}px`;
+
+      speedChartPoints
+        .querySelectorAll(".speed-chart-point")
+        .forEach((circle, circleIndex) => {
+          circle.classList.toggle("active", circleIndex === index);
+        });
+    };
+
+    speedPlot.onpointermove = (event) => {
+      if (!points.length) return;
+      const bounds = speedPlot.getBoundingClientRect();
+      const relativeX = Math.min(
+        1,
+        Math.max(0, (event.clientX - bounds.left) / bounds.width),
+      );
+      const index = Math.min(
+        points.length - 1,
+        Math.max(0, Math.round(relativeX * denominator)),
+      );
+      showTooltip(index, event.clientX, event.clientY);
+    };
+    speedPlot.onpointerleave = () => {
+      speedChartTooltip.hidden = true;
+      speedChartPoints
+        .querySelectorAll(".speed-chart-point")
+        .forEach((circle) => circle.classList.remove("active"));
+    };
+  }
+
   btnReview.addEventListener("click", () => {
     const results = window._lastResults;
     const questions = window._lastQuizQuestions;
@@ -802,6 +956,8 @@
     isListView = true;
     quizSubmitted = false;
     quizStartedAt = Date.now();
+    lastAnswerAt = quizStartedAt;
+    questionTimeMs = new Array(quizQuestions.length).fill(0);
     window._lastResults = null;
 
     if (timerInterval) clearInterval(timerInterval);
@@ -830,6 +986,8 @@
     quizSubmitted = false;
     quizQuestions = [];
     userAnswers = [];
+    questionTimeMs = [];
+    lastAnswerAt = 0;
     markedQuestions = new Set();
     showScreen(setupScreen);
     if (allQuestions.length > 0) generateDecks();

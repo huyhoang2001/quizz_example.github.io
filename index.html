@@ -5,11 +5,11 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta content="#eef2ff" name="theme-color"/>
-<title>Luyện thi VB2 Công an — Trắc nghiệm &amp; Chấm văn AI</title>
+<title>Luyện thi Trắc nghiệm &amp; Chấm văn AI</title>
 <script defer="" src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&amp;family=Nunito:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
 <link href="style.css" rel="stylesheet"/>
 </head>
 <body>
@@ -126,8 +126,8 @@
 </section>
 <section aria-labelledby="resultTitle" class="screen" id="resultScreen">
 <header class="result-header"><span class="eyebrow">Bạn đã hoàn thành</span><h2 id="resultTitle">Kết quả của bạn</h2><p>Mỗi lần luyện tập là một bước tiến nhỏ.</p></header>
-<div class="result-summary"><div class="result-score" id="resultScore">0/0</div><p class="score-label">Số câu trả lời đúng</p><div class="result-detail"><span class="result-correct">Đúng: <strong id="correctCount">0</strong></span><span class="result-wrong">Cần xem lại: <strong id="wrongCount">0</strong></span></div><div aria-label="Kết quả từng câu" class="result-dots" id="resultDots" role="img"></div><p id="resultPercent"></p></div>
-<section aria-labelledby="speedChartTitle" class="speed-chart"><div class="speed-chart-heading"><div><span class="eyebrow">Nhịp độ làm bài</span><h3 id="speedChartTitle">Tốc độ hoàn thành</h3></div><strong id="speedChartValue">0 giây/câu</strong></div><div aria-hidden="true" class="speed-track"><span id="speedChartBar"></span></div><div class="speed-stats"><span>Tổng thời gian <strong id="elapsedTime">00:00</strong></span><span id="speedNote">Nhịp độ của bạn</span></div></section>
+<div class="result-summary"><div class="result-score" id="resultScore">0/100</div><p class="score-label">Điểm bài thi</p><div class="result-detail"><span class="result-correct">Đúng: <strong id="correctCount">0</strong></span><span class="result-wrong">Cần xem lại: <strong id="wrongCount">0</strong></span></div><p class="result-status" id="resultPercent">Chưa có kết quả</p></div>
+<section aria-labelledby="speedChartTitle" class="speed-chart"><div class="speed-chart-heading"><div><span class="eyebrow">Nhịp độ làm bài</span><h3 id="speedChartTitle">Thời gian theo từng câu</h3></div><strong id="speedChartValue">0 giây/câu</strong></div><div class="speed-plot" id="speedPlot"><svg id="speedChartSvg" viewBox="0 0 1000 220" preserveAspectRatio="none" role="img" aria-label="Biểu đồ thời gian trả lời theo từng câu"><defs><linearGradient id="speedAreaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4f46e5" stop-opacity=".28"/><stop offset="100%" stop-color="#22c55e" stop-opacity=".03"/></linearGradient><linearGradient id="speedLineGradient" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#4f46e5"/><stop offset="100%" stop-color="#22c55e"/></linearGradient></defs><line class="speed-chart-grid" x1="24" y1="190" x2="976" y2="190"/><path id="speedChartArea" class="speed-chart-area"/><path id="speedChartBar" class="speed-chart-line"/><g id="speedChartPoints"></g></svg><div class="speed-chart-tooltip" id="speedChartTooltip" hidden></div></div><div class="speed-chart-axis"><span>Câu 1</span><span id="speedChartLastQuestion">Câu cuối</span></div><div class="speed-stats"><span>Tổng thời gian <strong id="elapsedTime">00:00</strong></span><span id="speedNote">Di chuột trên biểu đồ để xem từng câu</span></div></section>
 <div class="btn-group center"><button class="btn btn-outline" id="btnBackToSetup" type="button">Về trang chính</button><button class="btn btn-outline" id="btnRetake" type="button">↻ Làm lại đề này</button><button class="btn btn-primary" id="btnReview" type="button">Xem lại đáp án</button></div>
 </section>
 <section aria-labelledby="reviewTitle" class="screen" id="reviewScreen"><header class="result-header"><span class="eyebrow">Học từ câu trả lời</span><h2 id="reviewTitle">Xem lại bài làm</h2></header><div id="reviewContainer"></div><div class="btn-group center"><button class="btn btn-outline" id="btnBackToResult" type="button">← Quay lại kết quả</button></div></section>
